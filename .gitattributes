@@ -1,0 +1,37 @@
+# Line endings
+#
+# Store every text file with LF in the repository and check it out with LF on
+# every platform, including Windows. Without this, a Windows working copy with
+# core.autocrlf=true checks files out as CRLF, which shows up as whole-file
+# diffs between machines and breaks shell scripts on a Linux CI runner.
+#
+# Git detects which files are text; the exceptions below cover cases it cannot
+# infer reliably.
+* text=auto eol=lf
+
+# Always text, regardless of contents
+*.go      text eol=lf
+*.mod     text eol=lf
+*.sum     text eol=lf
+*.md      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.json    text eol=lf
+*.sh      text eol=lf
+Dockerfile text eol=lf
+Makefile  text eol=lf
+
+# Windows-only scripts must keep CRLF or they will not run
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+*.ps1     text eol=crlf
+
+# Never touch these
+*.png     binary
+*.jpg     binary
+*.gif     binary
+*.ico     binary
+*.pdf     binary
+*.zip     binary
+*.gz      binary
+*.exe     binary
