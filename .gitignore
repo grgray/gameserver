@@ -8,6 +8,10 @@
 *.so
 *.dylib
 
+# Build output — every component builds to its own bin/ directory.
+# Needed because an extensionless Linux/CI binary is not caught by *.exe above.
+bin/
+
 # Test binary, built with `go test -c`
 *.test
 
