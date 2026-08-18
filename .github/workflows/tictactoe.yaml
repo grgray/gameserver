@@ -11,6 +11,10 @@ defaults:
   run:
     working-directory: tictactoe
 
+permissions:
+  contents: read
+  packages: write
+  
 jobs:
   Build-push-tictactoe:
   
