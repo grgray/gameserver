@@ -1,0 +1,28 @@
+name: tictactoe Workflow
+
+# When this workflow runs
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # lets you trigger it manually from the Actions tab
+
+# This workflow will build and push the tictactoe project
+defaults:
+  run:
+    working-directory: tictactoe
+
+jobs:
+  Build-push-tictactoe:
+  
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v7
+
+      - name: build the cli with docker
+        run: docker build -t tictactoe -f Dockerfile.cli .
+
+      - name: output a done message
+        run: echo "cli built"
+
