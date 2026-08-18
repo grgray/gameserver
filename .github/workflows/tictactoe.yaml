@@ -14,7 +14,7 @@ defaults:
 permissions:
   contents: read
   packages: write
-  
+
 jobs:
   Build-push-tictactoe:
   
@@ -46,6 +46,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ./Dockerfile.cli
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/tictactoecli:${{ github.sha }}
