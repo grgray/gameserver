@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/readfern-gray/tictactoe/internal/game"
 )
 
 func main() {
@@ -16,19 +18,25 @@ func main() {
 	}
 }
 
-// run plays a full game, reading moves from in and writing the board to out.
+// run plays a full game, reading moves from in and writing the board to
+// out. It drives the same Game engine the REST API uses.
 func run(in io.Reader, out io.Writer) error {
 	scanner := bufio.NewScanner(in)
-	board := NewBoard()
-	current := X
+	g := game.NewGame()
 
 	fmt.Fprintln(out, "Tic-tac-toe: two players, X goes first.")
 	fmt.Fprintln(out, "Pick a cell by typing its number 1-9, or 'q' to quit.")
 
 	for {
-		fmt.Fprintf(out, "\n%s\n", board)
+		board, current, status := g.State()
+		fmt.Fprintf(out, "\n%s\n", &board)
 
-		cell, quit, err := readMove(scanner, out, board, current)
+		if status != game.StatusInProgress {
+			printResult(out, status)
+			return nil
+		}
+
+		cell, quit, err := readMove(scanner, out, &board, current)
 		if err != nil {
 			return err
 		}
@@ -37,24 +45,36 @@ func run(in io.Reader, out io.Writer) error {
 			return nil
 		}
 
-		board.Play(cell, current)
-
-		if w := board.Winner(); w != Empty {
-			fmt.Fprintf(out, "\n%s\nPlayer %c wins!\n", board, w)
+		board, _, status, err = g.Move(cell)
+		if err != nil {
+			// readMove already checked this cell against the board it was
+			// shown, so this can't happen outside a race with another
+			// caller; loop back and re-show the current state.
+			continue
+		}
+		if status != game.StatusInProgress {
+			fmt.Fprintf(out, "\n%s\n", &board)
+			printResult(out, status)
 			return nil
 		}
-		if board.Full() {
-			fmt.Fprintf(out, "\n%s\nIt's a draw.\n", board)
-			return nil
-		}
+	}
+}
 
-		current = other(current)
+// printResult announces a finished game's outcome.
+func printResult(out io.Writer, status game.Status) {
+	switch status {
+	case game.StatusXWon:
+		fmt.Fprintln(out, "Player X wins!")
+	case game.StatusOWon:
+		fmt.Fprintln(out, "Player O wins!")
+	case game.StatusDraw:
+		fmt.Fprintln(out, "It's a draw.")
 	}
 }
 
 // readMove prompts player until it gets a legal, unoccupied cell index. It
 // returns quit=true if the player asked to stop or input ran out.
-func readMove(scanner *bufio.Scanner, out io.Writer, board *Board, player Mark) (cell int, quit bool, err error) {
+func readMove(scanner *bufio.Scanner, out io.Writer, board *game.Board, player game.Mark) (cell int, quit bool, err error) {
 	for {
 		fmt.Fprintf(out, "Player %c, your move: ", player)
 
@@ -76,18 +96,10 @@ func readMove(scanner *bufio.Scanner, out io.Writer, board *Board, player Mark) 
 			fmt.Fprintln(out, "Please enter a number from 1 to 9.")
 			continue
 		}
-		if board[n-1] != Empty {
+		if board[n-1] != game.Empty {
 			fmt.Fprintf(out, "Cell %d is already taken.\n", n)
 			continue
 		}
 		return n - 1, false, nil
 	}
-}
-
-// other returns the mark belonging to the opposing player.
-func other(m Mark) Mark {
-	if m == X {
-		return O
-	}
-	return X
 }

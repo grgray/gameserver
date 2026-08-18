@@ -1,0 +1,20 @@
+# Two independently built and deployed services sharing one Go module:
+# `server` is the REST API, `cli` is the interactive front end. They do not
+# talk to each other — each is a separate way to play against the same game
+# engine (internal/game) baked into its own image.
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    ports:
+      - "8080:8080"
+
+  cli:
+    build:
+      context: .
+      dockerfile: Dockerfile.cli
+    stdin_open: true
+    tty: true
+    profiles:
+      - cli

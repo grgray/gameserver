@@ -10,20 +10,21 @@ README, so it can be built, tested and deployed independently.
 
 | Directory              | Description                                        |
 | ---------------------- | -------------------------------------------------- |
-| [`tictacto/`](tictacto/README.md) | Two-player tic-tac-toe playable from the command line |
+| [`tictactoe/`](tictactoe/README.md) | Two-player tic-tac-toe: interactive CLI and REST API, each its own deployable service |
 
-`tictacto` is currently the only component in the repository.
+`tictactoe` is currently the only component in the repository.
 
 ## Getting started
 
 Each component is built and run from its own directory. To play tic-tac-toe:
 
 ```sh
-cd tictacto
-go run .
+cd tictactoe
+go run ./cmd/cli          # interactive
+go run ./cmd/server        # REST API on :8080
 ```
 
-See that component's [README](tictacto/README.md) for its build, test and usage
+See that component's [README](tictactoe/README.md) for its build, test and usage
 details.
 
 ## Repository layout
@@ -32,12 +33,20 @@ details.
 gameserver/
 ├── README.md      this file — what the repo is and what it contains
 ├── .gitignore
-└── tictacto/      tic-tac-toe game (Go module)
+└── tictactoe/     tic-tac-toe game (Go module)
+    ├── internal/game/   shared game engine
+    ├── cmd/cli/         interactive front end
+    ├── cmd/server/      REST API front end
+    ├── Dockerfile.cli
+    └── Dockerfile.server
 ```
 
-A new game is added as a sibling directory of `tictacto`, following the same
+A new game is added as a sibling directory of `tictactoe`, following the same
 shape: its own `go.mod`, its own tests, and a README covering how to build,
-run and test it.
+run and test it. Where a game has multiple front ends, following `tictactoe`'s
+pattern — a shared `internal/` engine package plus one `cmd/` directory and one
+Dockerfile per front end — keeps each one independently buildable and
+deployable.
 
 ## Build output
 
@@ -45,8 +54,8 @@ Components build to a `bin/` directory inside their own directory, which is
 git-ignored:
 
 ```sh
-cd tictacto
-go build -o bin/ .
+cd tictactoe
+go build -o bin/ ./cmd/cli ./cmd/server
 ```
 
 Use the trailing slash on `-o`. Given a directory, Go names the binary after
