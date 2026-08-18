@@ -20,9 +20,10 @@ jobs:
       - name: Check out the repo
         uses: actions/checkout@v7
 
+      - name: Test the cli
+        run: go test 
+
       - name: build the cli with docker
         run: docker build -t tictactoe -f Dockerfile.cli .
 
-      - name: output a done message
-        run: echo "cli built"
-
+      
