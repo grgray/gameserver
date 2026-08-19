@@ -43,7 +43,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./tictactoe
-          file: Dockerfile.cli
+          file: ./Dockerfile.cli
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/tictactoecli:${{ github.sha }}
