@@ -39,7 +39,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
+      - name: Build and push cli image
         uses: docker/build-push-action@v6
         with:
           context: ./tictactoe
@@ -48,3 +48,13 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/tictactoecli:${{ github.sha }}
             ghcr.io/${{ github.repository_owner }}/tictactoecli:latest
+
+      - name: Build and push server image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./tictactoe
+          file: ./tictactoe/cmd/server/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/tictactoeserver:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/tictactoeserver:latest
