@@ -49,9 +49,28 @@ across restarts.
 
 | Method | Path                | Body               | Does                                               |
 | ------ | ------------------- | ------------------- | --------------------------------------------------- |
-| POST   | `/games`            | —                    | Starts a new game, X to move first.                  |
+| POST   | `/games`            | — or computer body  | Starts a new game, X to move first.                  |
 | GET    | `/games/{id}`       | —                    | Returns the game's current state.                    |
 | POST   | `/games/{id}/moves` | `{"cell": 1}`        | Plays cell 1-9 for whichever player's turn it is.    |
+
+`POST /games` with no body (or `{"mode": "human"}`) starts a two-human game,
+exactly as before. To play the computer instead, send:
+
+```json
+{ "mode": "computer", "level": 2, "mark": "O" }
+```
+
+- `level` is the computer's strength: `1` is easy (it takes a win and blocks
+  an immediate loss but cannot see a fork, so a two-way threat beats it) and
+  `2` is unbeatable (optimal minimax play — it never loses, so you can only
+  draw or lose).
+- `mark` is the symbol **you** play, `"X"` or `"O"` (defaults to `"X"`).
+  X always moves first, so if you pick `"O"` the computer opens the game and
+  the create response already contains its first move.
+
+Games against the computer echo the same fields plus `mode`, `level` and
+`mark`. Whenever you make a move the computer answers immediately, so the
+response to `POST /games/{id}/moves` already reflects both moves.
 
 Cells are numbered 1-9, left-to-right then top-to-bottom, matching the
 numbers the CLI prints on an empty board.

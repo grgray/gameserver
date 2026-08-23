@@ -282,3 +282,142 @@ func TestServerMoveUnknownGame(t *testing.T) {
 		t.Fatalf("status = %d, want %d", code, http.StatusNotFound)
 	}
 }
+
+func TestServerCreateComputerGame(t *testing.T) {
+	ts := newTestServer(t)
+
+	var got stateResponse
+	code := postJSON(t, ts.URL+"/games", createRequest{Mode: "computer", Level: 2, Mark: "O"}, &got)
+
+	if code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", code, http.StatusCreated)
+	}
+	if got.Mode != "computer" {
+		t.Errorf("Mode = %q, want %q", got.Mode, "computer")
+	}
+	if got.Level != 2 {
+		t.Errorf("Level = %d, want 2", got.Level)
+	}
+	if got.Mark != "O" {
+		t.Errorf("Mark = %q, want %q", got.Mark, "O")
+	}
+	if got.Turn != "O" {
+		t.Errorf("Turn = %q, want %q (human O moves after computer X opens)", got.Turn, "O")
+	}
+	// The computer (X) opens on the top-left corner (lowest tied cell).
+	if got.Board[0] != "X" {
+		t.Errorf("Board[0] = %q, want %q", got.Board[0], "X")
+	}
+}
+
+func TestServerCreateComputerDefaultsMarkToX(t *testing.T) {
+	ts := newTestServer(t)
+
+	var got stateResponse
+	code := postJSON(t, ts.URL+"/games", createRequest{Mode: "computer", Level: 1}, &got)
+
+	if code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", code, http.StatusCreated)
+	}
+	if got.Mark != "X" {
+		t.Errorf("Mark = %q, want %q", got.Mark, "X")
+	}
+	if got.Turn != "X" {
+		t.Errorf("Turn = %q, want %q (human X moves first)", got.Turn, "X")
+	}
+	for i, cell := range got.Board {
+		if cell != "" {
+			t.Errorf("Board[%d] = %q, want empty before human X moves", i, cell)
+		}
+	}
+}
+
+func TestServerComputerLevel1HumanWinsByFork(t *testing.T) {
+	ts := newTestServer(t)
+
+	var created stateResponse
+	postJSON(t, ts.URL+"/games", createRequest{Mode: "computer", Level: 1, Mark: "X"}, &created)
+	gameURL := ts.URL + "/games/" + created.ID
+
+	// X: 5 (centre), 9, then 3 creates a fork; 7 completes the win.
+	for _, cell := range []int{5, 9, 3, 7} {
+		var got stateResponse
+		if code := postJSON(t, gameURL+"/moves", moveRequest{Cell: cell}, &got); code != http.StatusOK {
+			t.Fatalf("move %d: status = %d, want %d", cell, code, http.StatusOK)
+		}
+		if cell == 7 {
+			if got.Status != string(game.StatusXWon) || got.Winner != "X" {
+				t.Fatalf("move %d: status = %q winner = %q, want X win", cell, got.Status, got.Winner)
+			}
+		}
+	}
+}
+
+func TestServerComputerLevel2NeverLoses(t *testing.T) {
+	ts := newTestServer(t)
+
+	var created stateResponse
+	postJSON(t, ts.URL+"/games", createRequest{Mode: "computer", Level: 2, Mark: "O"}, &created)
+	gameURL := ts.URL + "/games/" + created.ID
+
+	// The human (O) plays dumb — always the first empty cell — while the
+	// computer (X) plays Level 2. The computer must never lose.
+	for {
+		var state stateResponse
+		if code := getJSON(t, gameURL, &state); code != http.StatusOK {
+			t.Fatalf("GET: status = %d", code)
+		}
+		if state.Status != string(game.StatusInProgress) {
+			if state.Status == string(game.StatusOWon) {
+				t.Fatalf("Level 2 computer lost to a dumb human: status = %q", state.Status)
+			}
+			return
+		}
+
+		cell := firstEmptyCell(state.Board)
+		if cell == 0 {
+			t.Fatal("game in progress but board has no empty cell")
+		}
+		var after stateResponse
+		if code := postJSON(t, gameURL+"/moves", moveRequest{Cell: cell}, &after); code != http.StatusOK {
+			t.Fatalf("move %d: status = %d", cell, code)
+		}
+	}
+}
+
+func TestServerCreateComputerRejectsBadRequests(t *testing.T) {
+	ts := newTestServer(t)
+
+	tests := []struct {
+		name string
+		body createRequest
+	}{
+		{"bad mode", createRequest{Mode: "robot", Level: 2, Mark: "X"}},
+		{"bad level", createRequest{Mode: "computer", Level: 3, Mark: "X"}},
+		{"bad mark", createRequest{Mode: "computer", Level: 1, Mark: "Z"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got errorResponse
+			code := postJSON(t, ts.URL+"/games", tt.body, &got)
+			if code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", code, http.StatusBadRequest)
+			}
+			if got.Error == "" {
+				t.Error("expected an error message")
+			}
+		})
+	}
+}
+
+// firstEmptyCell returns the 1-indexed position of the first empty cell in a
+// rendered board, or 0 if the board is full.
+func firstEmptyCell(board [9]string) int {
+	for i, c := range board {
+		if c == "" {
+			return i + 1
+		}
+	}
+	return 0
+}
