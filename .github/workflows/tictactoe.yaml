@@ -6,10 +6,10 @@ on:
     branches: [ main ]
   workflow_dispatch:  # lets you trigger it manually from the Actions tab
 
-# This workflow will build and push the tictactoe project
+# This workflow will test, build and push the tictactoe backend and frontend.
 defaults:
   run:
-    working-directory: tictactoe
+    working-directory: tictactoe/backend
 
 permissions:
   contents: read
@@ -17,20 +17,40 @@ permissions:
 
 jobs:
   Build-push-tictactoe:
-  
+
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out the repo
         uses: actions/checkout@v7
+
       - name: Set up Go 1.26.5
         uses: actions/setup-go@v5
         with:
           go-version: "1.26.5"
           cache: false
-  
-      - name: Test the cli
-        run: go test ./... 
+
+      - name: Test the backend
+        run: go test ./...
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tictactoe/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: tictactoe/frontend
+        run: npm ci
+
+      - name: Build the frontend
+        working-directory: tictactoe/frontend
+        run: npm run build
+
+      - name: Test the frontend
+        working-directory: tictactoe/frontend
+        run: npm test
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -43,7 +63,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./tictactoe
-          file: ./tictactoe/cmd/cli/Dockerfile
+          file: ./tictactoe/Dockerfile.cli
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/tictactoecli:${{ github.sha }}
@@ -53,7 +73,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./tictactoe
-          file: ./tictactoe/cmd/server/Dockerfile
+          file: ./tictactoe/Dockerfile.server
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/tictactoeserver:${{ github.sha }}

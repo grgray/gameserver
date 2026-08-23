@@ -1,19 +1,58 @@
 # tictactoe
 
-A two-player tic-tac-toe game. Play it interactively from the command line,
-or run it as a REST API and drive it with HTTP requests instead — both
-front ends share the same game engine but ship as **separate binaries and
+A two-player tic-tac-toe game with three front ends over one shared engine: an
+interactive command line, a REST API, and an accessible React web app. All
+three share the same Go game engine but ship as **separate binaries and
 separate container images**, so they can be built, deployed and scaled
 independently.
 
+```
+tictactoe/
+  backend/        Go module: game engine + CLI + REST API
+  frontend/       React (TypeScript) web app that drives the REST API
+```
+
 ## Requirements
 
-- Go 1.26 or later (declared in `go.mod`)
+- Go 1.26 or later (declared in `backend/go.mod`)
+- Node.js 22 or later and npm (for the React frontend)
+
+## Play (web frontend)
+
+The React app runs against the REST API. During development it proxies API
+calls to a local server; in production the server serves the built app.
+
+```sh
+# terminal 1 — the API
+cd backend
+go run ./cmd/server
+
+# terminal 2 — the frontend (http://localhost:5173)
+cd frontend
+npm install
+npm run dev
+```
+
+To run the built app in production, serve the compiled frontend from the API
+so both live on one origin:
+
+```sh
+cd frontend
+npm run build          # writes frontend/dist
+
+cd ../backend
+go run ./cmd/server -static ../frontend/dist
+# open http://localhost:8080
+```
+
+The web frontend is accessible to screen readers and keyboard users: the board
+is a grid of labelled buttons, live regions announce turns and results, and
+the interface meets WCAG contrast and focus-visible requirements.
 
 ## Play (command line)
 
 ```sh
-cd tictactoe
+cd backend
 go run ./cmd/cli
 ```
 
@@ -38,6 +77,7 @@ board fills with no winner and the result is a draw.
 ## Play (REST API)
 
 ```sh
+cd backend
 go run ./cmd/server
 ```
 
@@ -105,9 +145,21 @@ curl -s -X POST localhost:8080/games/$id/moves -d '{"cell": 1}'
 curl -s localhost:8080/games/$id
 ```
 
+### Serving the web app
+
+Pass `-static <dir>` to serve a built frontend at `/` (with an SPA fallback to
+`index.html`), so the API and the web app share one origin:
+
+```sh
+go run ./cmd/server -http=:8080 -static ../frontend/dist
+```
+
+API routes always take precedence over the static handler.
+
 ## Build
 
 ```sh
+cd backend
 go build -o bin/ ./cmd/cli ./cmd/server
 ```
 
@@ -120,9 +172,15 @@ on Windows.
 ## Test
 
 ```sh
+cd backend
 go test ./...             # unit tests plus scripted end-to-end games
 go vet ./...
 gofmt -l .                # prints nothing when formatting is clean
+
+cd ../frontend
+npm test                  # component + API-client tests
+npm run lint              # eslint
+npm run build             # type-check + production build
 ```
 
 `cmd/cli`'s `run()` takes its input and output streams as parameters rather
@@ -130,60 +188,66 @@ than reading `os.Stdin` directly, which lets the tests drive complete games —
 win, draw, quit and recovery from bad input — by feeding it a scripted
 string. `cmd/server/server_test.go` does the equivalent for the API: it
 starts a real `httptest.Server` and plays out games over HTTP, checking
-status codes and JSON bodies.
+status codes and JSON bodies. The frontend tests cover the API client and the
+board's accessibility (via jest-axe).
 
 ## Architecture
 
-The code is a shared engine package plus two thin front ends, each its own
-`main` package so it builds and deploys as an independent binary:
+The code is a shared engine package plus three thin front ends:
 
 ```
-internal/game        Board + Game: cell grid, move legality, win/draw
-                      detection, turn tracking. Game.Move is safe for
-                      concurrent callers.
-       ↑                        ↑
-cmd/cli/main.go          cmd/server/{main,server}.go
-(interactive CLI,       (GameStore keyed by ID; HTTP handlers translate
- stdin/stdout)           requests into Game.State()/Move() calls and the
-                         result into JSON)
+backend/internal/game       Board + Game: cell grid, move legality, win/draw
+                             detection, turn tracking, computer opponent.
+                             Game.Move is safe for concurrent callers.
+       ↑              ↑               ↑
+backend/cmd/cli   backend/cmd/server  frontend/ (React app)
+(interactive CLI, (GameStore keyed    (calls the REST API; renders an
+ stdin/stdout)     by ID; HTTP        accessible board, announces turns
+                    handlers + JSON)   and results via live regions)
 ```
 
-- **`internal/game`** knows nothing about I/O or HTTP — just the board, whose
-  turn it is, and whether the game has been won or drawn. It is not
-  importable outside this module (Go's `internal/` convention), since it
-  only exists to be shared between `cmd/cli` and `cmd/server`.
-- **`cmd/cli`** is the interactive front end: it prints the board, reads and
-  validates a cell number from stdin, and calls `Game.Move`.
-- **`cmd/server`** is the HTTP front end: `GameStore` holds one `Game` per ID
-  in a map, and the handlers decode/encode JSON around `Game.State`/`Move`.
+- **`backend/internal/game`** knows nothing about I/O or HTTP — just the
+  board, whose turn it is, whether the game has been won or drawn, and the
+  computer opponent. It is not importable outside the Go module (Go's
+  `internal/` convention), since it only exists to be shared by the front
+  ends.
+- **`backend/cmd/cli`** is the interactive front end: it prints the board,
+  reads and validates a cell number from stdin, and calls `Game.Move`.
+- **`backend/cmd/server`** is the HTTP front end: `GameStore` holds one `Game`
+  per ID in a map, and the handlers decode/encode JSON around
+  `Game.State`/`Move`. It optionally serves the built web app.
+- **`frontend/`** is the React front end: a typed API client (`src/api.ts`)
+  talks to the REST API and components render the board, status and new-game
+  form with screen-reader support.
 
-Both front ends produce identical game outcomes because they call the same
-`Game` methods — the win/draw logic exists in exactly one place — but they
-are built, containerized and run as two independent services with no
-runtime dependency on each other.
+All front ends produce identical game outcomes because they call the same
+`Game` methods — the win/draw logic exists in exactly one place.
 
 ## Layout
 
 | Path                          | Contents                                                        |
 | ------------------------------ | ---------------------------------------------------------------- |
-| `internal/game/board.go`       | `Board` type, move legality, win/draw detection, rendering       |
-| `internal/game/game.go`        | `Game` type: turn tracking and win/draw status over a `Board`    |
-| `internal/game/*_test.go`      | Unit tests for `Board` and `Game`                                 |
-| `cmd/cli/main.go`               | Interactive CLI: game loop, move prompting, input validation     |
-| `cmd/cli/main_test.go`          | Full CLI-game tests through `run()`                               |
-| `cmd/server/main.go`            | Server entry point: parses `-http` and starts the API            |
-| `cmd/server/server.go`          | REST API: `GameStore`, HTTP handlers, JSON request/response types |
-| `cmd/server/server_test.go`     | REST API tests: full games played over real HTTP requests         |
+| `backend/internal/game/board.go` | `Board` type, move legality, win/draw detection, rendering     |
+| `backend/internal/game/game.go`  | `Game` type: turn tracking and win/draw status over a `Board`  |
+| `backend/internal/game/ai.go`    | Computer opponent: levels 1 (easy) and 2 (minimax)             |
+| `backend/internal/game/*_test.go` | Unit tests for `Board`, `Game` and the AI                      |
+| `backend/cmd/cli/main.go`        | Interactive CLI: game loop, move prompting, input validation   |
+| `backend/cmd/cli/main_test.go`   | Full CLI-game tests through `run()`                             |
+| `backend/cmd/server/main.go`     | Server entry point: parses `-http`/`-static` and starts the API |
+| `backend/cmd/server/server.go`   | REST API: `GameStore`, HTTP handlers, JSON types, static serving |
+| `backend/cmd/server/*_test.go`   | REST API + static-serving tests over real HTTP requests        |
+| `frontend/src/`                  | React app: API client, board, status, new-game form            |
+| `frontend/src/*.test.*`          | Vitest tests: API client, App flow, board accessibility        |
 
 Module path: `github.com/readfern-gray/tictactoe`
 
 ## Containers
 
-Each front end has its own Dockerfile, so the CLI and the API build as
-separate images and can be deployed as separate services:
+The CLI and the server build as separate images and can be deployed as
+separate services; the server image also bakes in the built web app:
 
 ```sh
-# REST API
+# REST API + web app
 docker build -f Dockerfile.server -t tictactoe-server .
 docker run -p 8080:8080 tictactoe-server
 
@@ -195,7 +259,7 @@ docker run -it tictactoe-cli
 Or with Compose, which wires up the same two images:
 
 ```sh
-docker compose up server           # starts the API on :8080
+docker compose up server           # API + web app on :8080
 docker compose run --rm cli        # plays one interactive game
 ```
 

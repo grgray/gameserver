@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/readfern-gray/tictactoe/internal/game"
@@ -116,14 +118,25 @@ func newGameID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// Server exposes a Game store over a REST API.
+// Server exposes a Game store over a REST API and, optionally, the built
+// frontend as static files.
 type Server struct {
-	store *GameStore
+	store     *GameStore
+	staticDir string
 }
 
-// NewServer returns a Server backed by a fresh, empty GameStore.
+// NewServer returns a Server backed by a fresh, empty GameStore, serving the
+// REST API only.
 func NewServer() *Server {
 	return &Server{store: NewGameStore()}
+}
+
+// WithStatic configures the server to also serve the built frontend from dir
+// at "/", so the React app is reachable at the same origin as the API. Pass
+// an empty dir (the default) to serve the API only.
+func (s *Server) WithStatic(dir string) *Server {
+	s.staticDir = dir
+	return s
 }
 
 // Handler returns the Server's routes as an http.Handler.
@@ -132,6 +145,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /games", s.handleCreate)
 	mux.HandleFunc("GET /games/{id}", s.handleGet)
 	mux.HandleFunc("POST /games/{id}/moves", s.handleMove)
+	if s.staticDir != "" {
+		// Registered after the API routes, so the more specific API patterns
+		// always win; every other GET falls through to the SPA handler.
+		mux.Handle("GET /", spaHandler(s.staticDir))
+	}
 	return mux
 }
 
@@ -139,6 +157,32 @@ func (s *Server) Handler() http.Handler {
 // stops, same as http.ListenAndServe.
 func ListenAndServe(addr string) error {
 	return http.ListenAndServe(addr, NewServer().Handler())
+}
+
+// ListenAndServeStatic starts the REST API on addr and also serves the built
+// frontend from staticDir at "/".
+func ListenAndServeStatic(addr, staticDir string) error {
+	return http.ListenAndServe(addr, NewServer().WithStatic(staticDir).Handler())
+}
+
+// spaHandler serves a built single-page app from dir: real files are served
+// as-is and any other path falls back to index.html so client-side routes
+// still load the app.
+func spaHandler(dir string) http.Handler {
+	fs := http.FileServer(http.Dir(dir))
+	index := filepath.Join(dir, "index.html")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.ServeFile(w, r, index)
+			return
+		}
+		full := filepath.Join(dir, filepath.FromSlash(r.URL.Path))
+		if info, err := os.Stat(full); err == nil && !info.IsDir() {
+			fs.ServeHTTP(w, r)
+			return
+		}
+		http.ServeFile(w, r, index)
+	})
 }
 
 // stateResponse is the JSON shape returned for a game, whether just created,
