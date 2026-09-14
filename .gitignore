@@ -31,6 +31,15 @@ go.work.sum
 # env file
 .env
 
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# macOS
+.DS_Store
