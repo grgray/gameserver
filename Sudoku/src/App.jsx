@@ -4,6 +4,7 @@ import {
   findConflicts,
   isBoardComplete,
 } from './sudoku.js';
+import { useDotPad } from './dotpad/useDotPad.js';
 import './App.css';
 
 const SIZE = 9;
@@ -32,6 +33,9 @@ export default function App() {
   const [won, setWon] = useState(false);
   const boardRef = useRef(null);
 
+  const dotPad = useDotPad();
+  const [dotPadMenuOpen, setDotPadMenuOpen] = useState(false);
+
   const givenMask = useMemo(
     () => puzzle.map((row) => row.map((value) => value !== 0)),
     [puzzle],
@@ -55,6 +59,18 @@ export default function App() {
       setAnnouncement(`Solved in ${formatTime(seconds)}. Well done!`);
     }
   }, [entries, conflicts, won, seconds]);
+
+  // Close the transport menu once a connection attempt resolves.
+  useEffect(() => {
+    if (dotPad.status !== 'connecting') setDotPadMenuOpen(false);
+  }, [dotPad.status]);
+
+  const handleDotPadTransport = useCallback(
+    (transport) => {
+      dotPad.connect(transport);
+    },
+    [dotPad],
+  );
 
   const startNewGame = useCallback(() => {
     const next = generatePuzzle('easy');
@@ -164,6 +180,65 @@ export default function App() {
           <button type="button" className="button button-primary" onClick={startNewGame}>
             New Game
           </button>
+        </div>
+
+        <div className="dotpad-panel">
+          {dotPad.status === 'connected' ? (
+            <div className="dotpad-connected">
+              <span className="dotpad-status" role="status">
+                Dot Pad connected{dotPad.device?.cellType ? ` (${dotPad.device.cellType})` : ''}
+              </span>
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={dotPad.disconnect}
+              >
+                Disconnect Dot Pad
+              </button>
+            </div>
+          ) : (
+            <div className="dotpad-connect">
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={!dotPad.supported || dotPad.status === 'connecting'}
+                aria-expanded={dotPadMenuOpen}
+                onClick={() => setDotPadMenuOpen((open) => !open)}
+              >
+                {dotPad.status === 'connecting' ? 'Connecting to Dot Pad…' : 'Connect to Dot Pad'}
+              </button>
+
+              {dotPadMenuOpen && dotPad.status !== 'connecting' && (
+                <div className="dotpad-menu" role="group" aria-label="Choose Dot Pad connection type">
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() => handleDotPadTransport('bluetooth')}
+                  >
+                    Connect via Bluetooth
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() => handleDotPadTransport('usb')}
+                  >
+                    Connect via USB
+                  </button>
+                </div>
+              )}
+
+              {!dotPad.supported && (
+                <p className="dotpad-hint">
+                  Dot Pad connections need a Chromium-based browser (e.g. Chrome or Edge).
+                </p>
+              )}
+              {dotPad.status === 'error' && (
+                <p className="dotpad-hint dotpad-hint-error" role="alert">
+                  {dotPad.error}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="board-wrapper">
