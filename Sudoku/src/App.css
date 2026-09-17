@@ -91,6 +91,48 @@
   border-color: var(--color-accent);
 }
 
+.dotpad-panel {
+  width: 100%;
+}
+
+.dotpad-connect,
+.dotpad-connected {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.dotpad-connected {
+  flex-direction: row;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.dotpad-menu {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.dotpad-status {
+  font-weight: 600;
+  color: var(--color-success);
+}
+
+.dotpad-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.dotpad-hint-error {
+  color: var(--color-conflict-text);
+}
+
 .board-wrapper {
   width: 100%;
   display: flex;
