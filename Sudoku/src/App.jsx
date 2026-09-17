@@ -5,6 +5,7 @@ import {
   isBoardComplete,
 } from './sudoku.js';
 import { useDotPad } from './dotpad/useDotPad.js';
+import { announceDotPadText } from './dotpad/dotpadClient.js';
 import './App.css';
 
 const SIZE = 9;
@@ -21,6 +22,23 @@ function formatTime(totalSeconds) {
 
 function cellKey(row, col) {
   return `${row},${col}`;
+}
+
+function describeCell(row, col, value, isGiven, hasConflict) {
+  return `Row ${row + 1}, column ${col + 1}, ${
+    value === 0 ? 'empty' : `value ${value}`
+  }${isGiven ? ', given clue' : ''}${hasConflict ? ', conflicting value' : ''}`;
+}
+
+// Shorter form for the Dot Pad's braille text line — "R"/"C" instead of the
+// spelled-out "Row"/"column" used in the on-screen aria-label above, and
+// "cl"/"v" instead of "value" to distinguish a given clue from a value the
+// player typed in.
+function describeCellForDotPad(row, col, value, isGiven, hasConflict) {
+  const valuePart = value === 0 ? 'empty' : `${isGiven ? 'cl' : 'v'}${value}`;
+  return `R${row + 1} C${col + 1}, ${valuePart}${
+    hasConflict ? ', conflicting value' : ''
+  }`;
 }
 
 export default function App() {
@@ -146,6 +164,31 @@ export default function App() {
   }, [selected]);
 
   const selectedValue = entries[selected.row][selected.col];
+
+  const selectedCellLabel = useMemo(
+    () =>
+      describeCellForDotPad(
+        selected.row,
+        selected.col,
+        selectedValue,
+        givenMask[selected.row][selected.col],
+        conflicts.has(cellKey(selected.row, selected.col)),
+      ),
+    [selected, selectedValue, givenMask, conflicts],
+  );
+
+  // Read the selected cell out on the Dot Pad's braille text line. Declared
+  // before the announcement effect below so that when both fire in the same
+  // commit (e.g. New Game resets both selection and announcement), the
+  // announcement's text is sent last and wins.
+  useEffect(() => {
+    announceDotPadText(selectedCellLabel);
+  }, [selectedCellLabel, dotPad.status]);
+
+  // One-off events (win, new game) take priority over the cell readout above.
+  useEffect(() => {
+    if (announcement) announceDotPadText(announcement);
+  }, [announcement]);
 
   const remainingCounts = useMemo(() => {
     const counts = Array(10).fill(9);
@@ -278,11 +321,7 @@ export default function App() {
                     .filter(Boolean)
                     .join(' ');
 
-                  const label = `Row ${row + 1}, column ${col + 1}, ${
-                    value === 0 ? 'empty' : `value ${value}`
-                  }${isGiven ? ', given clue' : ''}${
-                    hasConflict ? ', conflicting value' : ''
-                  }`;
+                  const label = describeCell(row, col, value, isGiven, hasConflict);
 
                   return (
                     <button
