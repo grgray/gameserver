@@ -5,9 +5,32 @@ import {
   isBoardComplete,
 } from './sudoku.js';
 import { useDotPad } from './dotpad/useDotPad.js';
-import { announceDotPadText, displayDotPadGraphic } from './dotpad/dotpadClient.js';
+import { announceDotPadText, displayDotPadGraphic, subscribeDotPadChord } from './dotpad/dotpadClient.js';
 import { BrlToHex } from './dotpad/brailleHex.js';
 import './App.css';
+
+// Dot Pad button chords -> action, keyed by the chord's canonical string
+// (see subscribeDotPadChord: which keys were held together, sorted — "1"-"4"
+// for Function 1-4, "L"/"R" for Panning Left/Right). A single button counts
+// as a one-key chord, so Panning Left/Right alone move across columns and
+// F1/F4 alone move up/down, same as the arrow keys; the Function-key combos
+// enter the matching digit, and Panning Left+F2+F4 clears the cell.
+const DOT_PAD_CHORD_ACTIONS = {
+  L: 'left',
+  R: 'right',
+  1: 'up',
+  4: 'down',
+  2: 1,
+  12: 2,
+  23: 3,
+  234: 4,
+  24: 5,
+  123: 6,
+  1234: 7,
+  124: 8,
+  13: 9,
+  '24L': 'clear',
+};
 
 const SIZE = 9;
 
@@ -118,6 +141,13 @@ export default function App() {
     if (dotPad.status !== 'connecting') setDotPadMenuOpen(false);
   }, [dotPad.status]);
 
+  // Select (and focus — see the roving-tabindex effect below) the first
+  // cell as soon as the Dot Pad connects, so Panning/Function keys can
+  // navigate the board right away without clicking into it first.
+  useEffect(() => {
+    if (dotPad.status === 'connected') setSelected({ row: 0, col: 0 });
+  }, [dotPad.status]);
+
   const handleDotPadTransport = useCallback(
     (transport) => {
       dotPad.connect(transport);
@@ -149,10 +179,16 @@ export default function App() {
     [givenMask, won],
   );
 
-  const moveSelection = useCallback((row, col) => {
-    const clampedRow = Math.max(0, Math.min(SIZE - 1, row));
-    const clampedCol = Math.max(0, Math.min(SIZE - 1, col));
-    setSelected({ row: clampedRow, col: clampedCol });
+  // Moves the selection relative to wherever it currently is (via the
+  // functional setState form, so this stays correct however it's called —
+  // from a cell's own keydown handler or from an unrelated event listener
+  // like the Dot Pad key subscription below — without needing `selected`
+  // in any dependency array).
+  const moveSelectionBy = useCallback((deltaRow, deltaCol) => {
+    setSelected((prev) => ({
+      row: Math.max(0, Math.min(SIZE - 1, prev.row + deltaRow)),
+      col: Math.max(0, Math.min(SIZE - 1, prev.col + deltaCol)),
+    }));
   }, []);
 
   const handleCellKeyDown = useCallback(
@@ -160,19 +196,19 @@ export default function App() {
       switch (event.key) {
         case 'ArrowUp':
           event.preventDefault();
-          moveSelection(row - 1, col);
+          moveSelectionBy(-1, 0);
           break;
         case 'ArrowDown':
           event.preventDefault();
-          moveSelection(row + 1, col);
+          moveSelectionBy(1, 0);
           break;
         case 'ArrowLeft':
           event.preventDefault();
-          moveSelection(row, col - 1);
+          moveSelectionBy(0, -1);
           break;
         case 'ArrowRight':
           event.preventDefault();
-          moveSelection(row, col + 1);
+          moveSelectionBy(0, 1);
           break;
         case 'Backspace':
         case 'Delete':
@@ -187,7 +223,7 @@ export default function App() {
           }
       }
     },
-    [moveSelection, setCellValue],
+    [moveSelectionBy, setCellValue],
   );
 
   // Keep DOM focus in sync with the selected cell (roving tabindex pattern).
@@ -197,6 +233,24 @@ export default function App() {
     );
     node?.focus();
   }, [selected]);
+
+  // Dot Pad button chords: fires once a chord is fully released (see
+  // subscribeDotPadChord and DOT_PAD_CHORD_ACTIONS above).
+  useEffect(
+    () =>
+      subscribeDotPadChord((chord) => {
+        const action = DOT_PAD_CHORD_ACTIONS[chord];
+        if (action === 'up') moveSelectionBy(-1, 0);
+        else if (action === 'down') moveSelectionBy(1, 0);
+        else if (action === 'left') moveSelectionBy(0, -1);
+        else if (action === 'right') moveSelectionBy(0, 1);
+        else if (action === 'clear') setCellValue(selected.row, selected.col, 0);
+        else if (typeof action === 'number') {
+          setCellValue(selected.row, selected.col, action);
+        }
+      }),
+    [moveSelectionBy, setCellValue, selected],
+  );
 
   const selectedValue = entries[selected.row][selected.col];
 

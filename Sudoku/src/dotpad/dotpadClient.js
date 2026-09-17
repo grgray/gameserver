@@ -6,6 +6,7 @@ import {
   BrailleLanguage,
   GradeOption,
   LiblouisManager,
+  DotPadKey,
 } from './DotPadSDK-3.0.3.js';
 
 // liblouis (used for text -> braille translation) is vendored as static
@@ -21,9 +22,50 @@ sdk.setBrailleLanguage(BrailleLanguage.English, GradeOption.Grade2);
 
 let connectedDevice = null;
 const listeners = new Set();
+const keyDownListeners = new Set();
+const chordListeners = new Set();
 
 function notify() {
   for (const listener of listeners) listener(connectedDevice);
+}
+
+// Chord tracking for all six buttons (Function 1-4, Panning Left/Right):
+// onKeyDown/onKeyUp report one physical key at a time, so a multi-key combo
+// (e.g. Panning Left+F2+F4) arrives as separate down/up events per key
+// rather than a single event. We track which of these keys are currently
+// held, remember every key that joined the chord since the first one went
+// down, and fire once the chord is fully released — mirroring how a
+// physical braille chord is "read" on release. This covers single-key
+// presses too (a "chord" of one), so every button — alone or combined —
+// goes through the same path, avoiding a key firing an immediate single-key
+// action before the rest of its intended combo has joined.
+const CHORD_KEY_TOKEN = {
+  [DotPadKey.KeyFunction1]: '1',
+  [DotPadKey.KeyFunction2]: '2',
+  [DotPadKey.KeyFunction3]: '3',
+  [DotPadKey.KeyFunction4]: '4',
+  [DotPadKey.PanningLeft]: 'L',
+  [DotPadKey.PanningRight]: 'R',
+};
+
+let heldChordKeys = new Set();
+let chordKeys = new Set();
+
+function handleChordKeyDown(key) {
+  if (heldChordKeys.size === 0) chordKeys = new Set();
+  heldChordKeys.add(key);
+  chordKeys.add(key);
+}
+
+function handleChordKeyUp(key) {
+  heldChordKeys.delete(key);
+  if (heldChordKeys.size > 0 || chordKeys.size === 0) return;
+  const chord = [...chordKeys]
+    .map((k) => CHORD_KEY_TOKEN[k])
+    .sort()
+    .join('');
+  chordKeys = new Set();
+  for (const listener of chordListeners) listener(chord);
 }
 
 sdk.setCallBack(
@@ -38,6 +80,13 @@ sdk.setCallBack(
     }
   },
   () => {},
+  (device, key) => {
+    for (const listener of keyDownListeners) listener(key, device);
+    if (key in CHORD_KEY_TOKEN) handleChordKeyDown(key);
+  },
+  (device, key) => {
+    if (key in CHORD_KEY_TOKEN) handleChordKeyUp(key);
+  },
 );
 
 export function isDotPadSupported() {
@@ -100,4 +149,21 @@ export function getConnectedDotPadDevice() {
 export function subscribeDotPadConnection(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+// Fires on every physical key press (a DotPadKey value — see
+// DotPadSDK-3.0.3.d.ts) reported by the connected device, e.g. Panning
+// Left/Right or Function 1-4. `listener(key, device)`.
+export function subscribeDotPadKeyDown(listener) {
+  keyDownListeners.add(listener);
+  return () => keyDownListeners.delete(listener);
+}
+
+// Fires once a chord of buttons is fully released, with a canonical string
+// of which keys were held together, sorted — "1"-"4" for Function 1-4, "L"/
+// "R" for Panning Left/Right. E.g. "1" for Function 1 alone, "123" for
+// Function 1+2+3 together, "24L" for Panning Left+F2+F4. `listener(chord)`.
+export function subscribeDotPadChord(listener) {
+  chordListeners.add(listener);
+  return () => chordListeners.delete(listener);
 }
