@@ -5,10 +5,45 @@ import {
   isBoardComplete,
 } from './sudoku.js';
 import { useDotPad } from './dotpad/useDotPad.js';
-import { announceDotPadText } from './dotpad/dotpadClient.js';
+import { announceDotPadText, displayDotPadGraphic } from './dotpad/dotpadClient.js';
+import { BrlToHex } from './dotpad/brailleHex.js';
 import './App.css';
 
 const SIZE = 9;
+
+// Standard braille numeral dot patterns (digits 1-9 share the dot patterns
+// of letters a-i). An empty cell (value 0) has no dots of its own here.
+const DIGIT_DOTS = {
+  1: '1',
+  2: '12',
+  3: '14',
+  4: '145',
+  5: '15',
+  6: '124',
+  7: '1245',
+  8: '125',
+  9: '24',
+};
+
+// The Dot Pad's graphic area is 30 cells wide per line.
+const GRAPHIC_LINE_WIDTH = 30;
+
+// Builds one board row's braille cells — a blank cell between each column so
+// digits stay distinguishable (column 0 at cell 0, column 1 at cell 2, and
+// so on — see BrlToHex), padded with blanks out to the full line width so
+// the next row lands exactly at the start of the following line. The
+// selected column (-1 if the selection isn't on this row) gets dot 6 added
+// on top of its usual dots, as a marker for which cell is selected.
+function buildRowHex(rowValues, selectedCol) {
+  const cells = rowValues.map((value, col) => {
+    const dots = (value === 0 ? '135' : DIGIT_DOTS[value]) + (col === selectedCol ? '6' : '');
+    return BrlToHex(dots);
+  });
+  const rowHex = cells.join('00');
+  const usedCells = cells.length * 2 - 1;
+  const paddingCells = Math.max(0, GRAPHIC_LINE_WIDTH - usedCells);
+  return rowHex + '00'.repeat(paddingCells);
+}
 
 function cloneBoard(board) {
   return board.map((row) => [...row]);
@@ -189,6 +224,24 @@ export default function App() {
   useEffect(() => {
     if (announcement) announceDotPadText(announcement);
   }, [announcement]);
+
+  // Mirror the whole board onto the Dot Pad's graphic area, one raw braille
+  // cell per column (built directly with BrlToHex, no liblouis translation)
+  // — an empty cell is dots 1-3-5, and the selected cell additionally gets
+  // dot 6. Each row is padded out to the full 30-cell line width so it
+  // starts a new physical line on the device. Kept in sync as the board's
+  // values or selection change.
+  const boardHex = useMemo(
+    () =>
+      entries
+        .map((row, r) => buildRowHex(row, r === selected.row ? selected.col : -1))
+        .join(''),
+    [entries, selected],
+  );
+
+  useEffect(() => {
+    displayDotPadGraphic(boardHex);
+  }, [boardHex, dotPad.status]);
 
   const remainingCounts = useMemo(() => {
     const counts = Array(10).fill(9);

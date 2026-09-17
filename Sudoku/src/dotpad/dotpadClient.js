@@ -73,6 +73,20 @@ export async function announceDotPadText(text) {
   }
 }
 
+// Sends a raw pin-hex string (see BrlToHex in brailleHex.js) straight to the
+// graphic area (the 300-pin tactile display, not the small braille text
+// line), starting from its top-left cell. No liblouis translation involved —
+// the caller builds the exact dot pattern for each cell itself. No-ops when
+// nothing is connected, or if the display call fails.
+export function displayDotPadGraphic(hex) {
+  if (!connectedDevice || !hex) return;
+  try {
+    sdk.displayGraphicData(hex, connectedDevice, DisplayMode.GraphicMode);
+  } catch {
+    // Best-effort — a transport hiccup shouldn't break the game.
+  }
+}
+
 // Exposed so the next stage (sending display data, reading key events) can
 // reuse this same connection without re-scanning or re-connecting.
 export function getDotPadSdk() {
