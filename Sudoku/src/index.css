@@ -1,0 +1,90 @@
+:root {
+  color-scheme: light dark;
+
+  --color-bg-start: #eef2ff;
+  --color-bg-end: #e0e7ff;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f8fafc;
+  --color-border: #cbd5e1;
+  --color-border-strong: #475569;
+  --color-text: #1e293b;
+  --color-text-muted: #64748b;
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-accent-contrast: #ffffff;
+  --color-given: #1e293b;
+  --color-entry: #4f46e5;
+  --color-peer: #e0e7ff;
+  --color-selected: #c7d2fe;
+  --color-same-value: #ddd6fe;
+  --color-conflict-bg: #fee2e2;
+  --color-conflict-text: #b91c1c;
+  --color-success: #16a34a;
+  --focus-ring: #f59e0b;
+
+  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-start: #0f172a;
+    --color-bg-end: #1e1b4b;
+    --color-surface: #1e293b;
+    --color-surface-alt: #273449;
+    --color-border: #3f4f68;
+    --color-border-strong: #94a3b8;
+    --color-text: #e2e8f0;
+    --color-text-muted: #94a3b8;
+    --color-accent: #818cf8;
+    --color-accent-hover: #a5b4fc;
+    --color-accent-contrast: #1e1b4b;
+    --color-given: #f1f5f9;
+    --color-entry: #a5b4fc;
+    --color-peer: #303c58;
+    --color-selected: #3d4a75;
+    --color-same-value: #4c3f78;
+    --color-conflict-bg: #4c1d1d;
+    --color-conflict-text: #fca5a5;
+    --color-success: #4ade80;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: linear-gradient(160deg, var(--color-bg-start), var(--color-bg-end));
+  color: var(--color-text);
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: clamp(1rem, 4vw, 3rem) 1rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
