@@ -183,6 +183,13 @@ header h1 {
   font-weight: 600;
 }
 
+.grid-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
 .puzzle-layout {
   display: flex;
   gap: 2rem;

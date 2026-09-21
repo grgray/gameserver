@@ -24,20 +24,37 @@ const LETTER_DOTS = {
 const GRAPHIC_LINE_WIDTH = 30;
 
 // Builds one puzzle row's braille cells for the Dot Pad graphic area — a
-// blank spacer cell between each grid cell so adjacent cells stay
-// distinguishable by touch (same reasoning as Sudoku's buildRowHex): a
-// blocked cell is all 8 dots raised, a filled cell with a typed letter
-// shows that letter's braille pattern, and a filled-but-empty cell is
-// blank. Padded out to the full line width so the next row starts a new
-// physical line.
-function buildRowHex(rowCells, answerRow) {
+// spacer cell between each grid cell so adjacent cells stay distinguishable
+// by touch (same reasoning as Sudoku's buildRowHex): a blocked cell is all
+// 8 dots raised, except when the cell directly below it (in the next row
+// down, same column) is fillable — dots 7/8 sit at the bottom of the cell,
+// right against the top of whatever's in the row below (rows are stacked
+// with no gap), so raising them there would bleed into a letter cell's top
+// dots. A filled cell with a typed letter shows that letter's braille
+// pattern, and a filled-but-empty cell is blank. The selected cell always
+// gets dots 7 and 8 added on top — on top of its letter's pattern if it
+// has one, or alone if it's still empty. A spacer between two blocked
+// cells repeats the cell to its left, so a run of boundary squares reads
+// as one solid wall; a spacer next to a letter cell (on either side) stays
+// blank, keeping letters legible. Padded out to the full line width so the
+// next row starts a new physical line.
+function buildRowHex(rowCells, answerRow, selectedCol, nextRowCells) {
   const cells = rowCells.map((cell, col) => {
-    if (!cell.filled) return BrlToHex("12345678");
+    if (!cell.filled) {
+      const belowIsFillable = Boolean(nextRowCells && nextRowCells[col].filled);
+      return BrlToHex(belowIsFillable ? "123456" : "12345678");
+    }
     const letter = answerRow[col];
-    return letter ? BrlToHex(LETTER_DOTS[letter] || "") : "00";
+    const dots = letter ? LETTER_DOTS[letter] || "" : "";
+    return col === selectedCol ? BrlToHex(dots + "78") : BrlToHex(dots);
   });
-  const rowHex = cells.join("00");
-  const usedCells = cells.length * 2 - 1;
+  const interleaved = cells.flatMap((cell, i) => {
+    if (i === cells.length - 1) return [cell];
+    const bothBlocked = !rowCells[i].filled && !rowCells[i + 1].filled;
+    return [cell, bothBlocked ? cell : "00"];
+  });
+  const rowHex = interleaved.join("");
+  const usedCells = interleaved.length;
   const paddingCells = Math.max(0, GRAPHIC_LINE_WIDTH - usedCells);
   return rowHex + "00".repeat(paddingCells);
 }
@@ -152,14 +169,43 @@ export default function App() {
     setDirection(dir);
   }
 
+  function handleReveal() {
+    if (!puzzle) return;
+    setUserAnswers(
+      puzzle.grid.map((row) => row.map((cell) => (cell.filled ? cell.solution : "")))
+    );
+  }
+
+  function handleRevealClue() {
+    if (!puzzle || !maps || !activeKey) return;
+    const cells = maps.wordCells[activeKey];
+    if (!cells) return;
+    setUserAnswers((prev) => {
+      const next = prev.map((r) => r.slice());
+      for (const [r, c] of cells) {
+        next[r][c] = puzzle.grid[r][c].solution;
+      }
+      return next;
+    });
+  }
+
   // Mirror the whole grid onto the Dot Pad's graphic area, one raw braille
   // cell per grid cell (built directly with BrlToHex, no liblouis
   // translation). Kept in sync as the puzzle loads or the player's answers
   // change.
   const boardHex = useMemo(() => {
     if (!puzzle) return "";
-    return puzzle.grid.map((row, r) => buildRowHex(row, userAnswers[r])).join("");
-  }, [puzzle, userAnswers]);
+    return puzzle.grid
+      .map((row, r) =>
+        buildRowHex(
+          row,
+          userAnswers[r],
+          r === selectedCell?.[0] ? selectedCell[1] : -1,
+          puzzle.grid[r + 1]
+        )
+      )
+      .join("");
+  }, [puzzle, userAnswers, selectedCell]);
 
   useEffect(() => {
     displayDotPadGraphic(boardHex);
@@ -263,6 +309,19 @@ export default function App() {
               onSelectCell={handleSelectCell}
               onCellChange={handleCellChange}
             />
+            <div className="grid-toolbar">
+              <button type="button" className="button button-secondary" onClick={handleReveal}>
+                Reveal Solution
+              </button>
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={!activeKey}
+                onClick={handleRevealClue}
+              >
+                Reveal Clue
+              </button>
+            </div>
             {activeClue && (
               <p className="active-clue" aria-live="polite">
                 {activeClue.number} {activeClue.direction}: {activeClue.clue} (
