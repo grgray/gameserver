@@ -47,6 +47,29 @@ the backend on `http://localhost:8000` (see `frontend/vite.config.js`).
 
 Open `http://localhost:5173`, enter a subject, and click **Generate Puzzle**.
 
+## Deploying to Vercel
+
+The repo root is `CrossMyMind/vercel.json` + `CrossMyMind/api/index.py` (a
+thin wrapper that imports the existing FastAPI `app` from `backend/` without
+changing it — local `uvicorn app.main:app` keeps working exactly as above).
+
+Since this lives inside the larger `gameserver` monorepo:
+
+1. In the Vercel dashboard, import the `gameserver` GitHub repo, then set the
+   project's **Root Directory** to `CrossMyMind`. Framework preset: Other
+   (the build/output settings come from `vercel.json`).
+2. Add the environment variable `DEEPSEEK_API_KEY` (Project Settings →
+   Environment Variables) — this is the same secret as `backend/.env`, just
+   set through Vercel instead of a local file. Optionally add
+   `DEEPSEEK_MODEL` too.
+3. Deploy. Frontend and API end up on the same domain, so the frontend's
+   `/api/*` calls are same-origin — no CORS setup needed in production.
+4. To use your own domain: add it under Project Settings → Domains, then at
+   your registrar (e.g. GoDaddy) point DNS at Vercel as it instructs — either
+   an A record at the apex to Vercel's IP, or a CNAME on a subdomain like
+   `www` to `cname.vercel-dns.com`. Vercel provisions HTTPS automatically
+   once DNS resolves.
+
 ## How it works
 
 1. Frontend posts `{ subject }` to `POST /api/puzzle`.
