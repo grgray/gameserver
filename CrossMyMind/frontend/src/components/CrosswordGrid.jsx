@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { findNextFillable } from "../utils/crossword";
 
 // Mouse click toggles direction on a repeat click of the *same* cell.
@@ -10,17 +10,20 @@ function cellRefKey(row, col) {
   return `${row}-${col}`;
 }
 
-export default function CrosswordGrid({
-  puzzle,
-  userAnswers,
-  selectedCell,
-  direction,
-  activeWordCells,
-  acrossWordAt,
-  downWordAt,
-  onSelectCell,
-  onCellChange,
-}) {
+const CrosswordGrid = forwardRef(function CrosswordGrid(
+  {
+    puzzle,
+    userAnswers,
+    selectedCell,
+    direction,
+    activeWordCells,
+    acrossWordAt,
+    downWordAt,
+    onSelectCell,
+    onCellChange,
+  },
+  ref
+) {
   const inputRefs = useRef({});
   const lastClickRef = useRef(null);
 
@@ -28,6 +31,11 @@ export default function CrosswordGrid({
     const el = inputRefs.current[cellRefKey(row, col)];
     if (el) el.focus();
   };
+
+  // Exposed so callers outside the grid (Dot Pad button navigation in
+  // App.jsx) can move DOM focus the same way arrow-key navigation does,
+  // keeping on-screen focus/highlighting in sync regardless of input source.
+  useImperativeHandle(ref, () => ({ focusCell }));
 
   // Move focus into the grid whenever a new puzzle is generated, so the
   // player can start typing immediately instead of landing back on the form.
@@ -171,4 +179,6 @@ export default function CrosswordGrid({
       </tbody>
     </table>
   );
-}
+});
+
+export default CrosswordGrid;

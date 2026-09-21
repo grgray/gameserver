@@ -122,6 +122,34 @@ export async function announceDotPadText(text) {
   }
 }
 
+// Translates plain text to a single continuous line of braille hex — no
+// word-wrapping, so it can run longer than the device's text line width.
+// Callers are expected to slice out a display-width window themselves (see
+// displayDotPadTextRaw) and re-slice as the reader pans left/right. Returns
+// '' if nothing is connected or translation fails.
+export async function translateDotPadText(text) {
+  if (!connectedDevice || !text) return '';
+  try {
+    return await sdk.translateText(text, false);
+  } catch {
+    return '';
+  }
+}
+
+// Sends an already-translated braille hex string straight to the connected
+// device's text line, starting at its first cell — no further translation
+// or word-wrapping, unlike announceDotPadText. Pairs with
+// translateDotPadText: the caller translates once, then sends successive
+// windows of that hex as the reader pans. No-ops when nothing is connected.
+export function displayDotPadTextRaw(hex) {
+  if (!connectedDevice) return;
+  try {
+    sdk.displayTextData(hex || '', connectedDevice, DisplayMode.TextMode, false);
+  } catch {
+    // Best-effort — a transport hiccup shouldn't break the game.
+  }
+}
+
 // Sends a raw pin-hex string (see BrlToHex in brailleHex.js) straight to the
 // graphic area (the 300-pin tactile display, not the small braille text
 // line), starting from its top-left cell. No liblouis translation involved —

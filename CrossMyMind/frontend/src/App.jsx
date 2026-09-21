@@ -1,12 +1,21 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SubjectForm from "./components/SubjectForm";
 import CrosswordGrid from "./components/CrosswordGrid";
 import ClueList from "./components/ClueList";
 import { generatePuzzle } from "./api/puzzleClient";
-import { buildWordMaps, activeWordKey, findFirstFillable } from "./utils/crossword";
+import { buildWordMaps, activeWordKey, findFirstFillable, findNextFillable } from "./utils/crossword";
 import { useDotPad } from "./dotpad/useDotPad.js";
-import { displayDotPadGraphic } from "./dotpad/dotpadClient.js";
+import {
+  displayDotPadGraphic,
+  displayDotPadTextRaw,
+  subscribeDotPadChord,
+  translateDotPadText,
+} from "./dotpad/dotpadClient.js";
 import { BrlToHex } from "./dotpad/brailleHex.js";
+
+// Fallback braille text line width (cells) used before a device is
+// connected/its own numberBrailleCellColumns is known.
+const DEFAULT_DOT_PAD_LINE_WIDTH = 20;
 
 function emptyAnswers(size) {
   return Array.from({ length: size }, () => Array(size).fill(""));
@@ -19,6 +28,29 @@ const LETTER_DOTS = {
   O: "135", P: "1234", Q: "12345", R: "1235", S: "234", T: "2345",
   U: "136", V: "1236", W: "2456", X: "1346", Y: "13456", Z: "1356",
 };
+
+// For letter entry, each Dot Pad button stands in for one braille dot
+// position: Panning Left = dot 3, F1 = dot 2, F2 = dot 1, F3 = dot 4,
+// F4 = dot 5, Panning Right = dot 6. Holding the buttons for a letter's
+// dots together (as one chord — see subscribeDotPadChord) and releasing
+// enters that letter, the same way a Perkins-style brailler works.
+const DOT_TO_CHORD_TOKEN = { 1: "2", 2: "1", 3: "L", 4: "3", 5: "4", 6: "R" };
+
+// Reverse of LETTER_DOTS: which letter a given Dot Pad chord spells, keyed
+// by the same sorted-token chord string subscribeDotPadChord produces.
+// E.g. T is dots 2345, which is buttons F1+PanningLeft+F3+F4 -> chord
+// "134L" -> "T". Verified to have no collisions with each other or with
+// the L/R/F1/F4 navigation chords above.
+const CHORD_TO_LETTER = Object.fromEntries(
+  Object.entries(LETTER_DOTS).map(([letter, dots]) => {
+    const chord = dots
+      .split("")
+      .map((d) => DOT_TO_CHORD_TOKEN[d])
+      .sort()
+      .join("");
+    return [chord, letter];
+  })
+);
 
 // The Dot Pad's graphic area is 30 cells wide per line.
 const GRAPHIC_LINE_WIDTH = 30;
@@ -59,6 +91,39 @@ function buildRowHex(rowCells, answerRow, selectedCol, nextRowCells) {
   return rowHex + "00".repeat(paddingCells);
 }
 
+// Packs already-translated words (each { hex }, one braille cell per two hex
+// chars) into fixed-width text-line "pages" without ever splitting a word
+// across a page boundary: words are added to the current page, separated by
+// a blank cell, until the next word wouldn't fit, then a new page starts. A
+// single word longer than the line width gets a page of its own (and will
+// be truncated on send — there's no narrower window to pan within a word).
+// Each page is padded out to the full line width with blank cells so a
+// shorter page fully overwrites whatever the previous page left displayed.
+function paginateWords(words, lineWidth) {
+  const pages = [];
+  let current = [];
+  let currentCells = 0;
+  for (const word of words) {
+    const wordCells = word.hex.length / 2;
+    const wouldBeCells = current.length === 0 ? wordCells : currentCells + 1 + wordCells;
+    if (current.length > 0 && wouldBeCells > lineWidth) {
+      pages.push(current);
+      current = [word];
+      currentCells = wordCells;
+    } else {
+      current.push(word);
+      currentCells = wouldBeCells;
+    }
+  }
+  if (current.length > 0) pages.push(current);
+
+  return pages.map((pageWords) => {
+    const hex = pageWords.map((word) => word.hex).join("00");
+    const paddingCells = Math.max(0, lineWidth - hex.length / 2);
+    return hex + "00".repeat(paddingCells);
+  });
+}
+
 export default function App() {
   const [subject, setSubject] = useState("");
   const [puzzle, setPuzzle] = useState(null);
@@ -71,6 +136,7 @@ export default function App() {
 
   const dotPad = useDotPad();
   const [dotPadMenuOpen, setDotPadMenuOpen] = useState(false);
+  const gridRef = useRef(null);
 
   // Close the transport menu once a connection attempt resolves.
   useEffect(() => {
@@ -112,6 +178,50 @@ export default function App() {
     const entry = list.find((e) => e.number === number);
     return entry ? { ...entry, direction: dir } : null;
   }, [puzzle, activeKey]);
+
+  // Shorter form for the Dot Pad's braille text line — "A"/"D" instead of
+  // the spelled-out "across"/"down" used in the on-screen readout above,
+  // but otherwise carrying the same information (including the letter
+  // count).
+  const activeClueForDotPad = useMemo(() => {
+    if (!activeClue) return "";
+    const dirLetter = activeClue.direction === "across" ? "A" : "D";
+    return `${activeClue.number}${dirLetter}: ${activeClue.clue}. ${activeClue.answer_length} letters`;
+  }, [activeClue]);
+
+  const dotPadLineWidth = dotPad.device?.numberBrailleCellColumns || DEFAULT_DOT_PAD_LINE_WIDTH;
+
+  // The currently active clue, translated word-by-word and packed into
+  // fixed-width text-line "pages" that never split a word across a page
+  // boundary (see paginateWords) — long clues run past the Dot Pad's text
+  // line width, and panning below steps through these pages instead of a
+  // raw cell-offset window.
+  const [dotPadPages, setDotPadPages] = useState([]);
+  const [dotPadPageIndex, setDotPadPageIndex] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDotPadPageIndex(0);
+    const words = activeClueForDotPad.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      setDotPadPages([]);
+      return;
+    }
+    Promise.all(words.map((word) => translateDotPadText(word))).then((hexes) => {
+      if (cancelled) return;
+      const translatedWords = hexes.map((hex) => ({ hex })).filter((w) => w.hex);
+      setDotPadPages(paginateWords(translatedWords, dotPadLineWidth));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeClueForDotPad, dotPad.status, dotPadLineWidth]);
+
+  // Send whichever page the reader is currently on to the Dot Pad's
+  // braille text line.
+  useEffect(() => {
+    displayDotPadTextRaw(dotPadPages[dotPadPageIndex] || "");
+  }, [dotPadPages, dotPadPageIndex, dotPad.status]);
 
   async function handleGenerate(subjectValue) {
     setLoading(true);
@@ -155,6 +265,101 @@ export default function App() {
       return hasAcross ? "across" : "down";
     });
   }
+
+  // Moves the grid selection the same way an arrow key does (skipping
+  // blocked cells, forcing direction to match the axis moved along — see
+  // CrosswordGrid's own ArrowUp/Down/Left/Right handling) and moves DOM
+  // focus to match. Used by Dot Pad button navigation below; keyboard
+  // arrow keys keep their own separate, unchanged code path in
+  // CrosswordGrid.
+  const moveGridSelection = useCallback(
+    (dr, dc, forceDirection) => {
+      if (!puzzle || !selectedCell) return;
+      const next = findNextFillable(puzzle, selectedCell[0], selectedCell[1], dr, dc);
+      if (!next) return;
+      handleSelectCell(next[0], next[1], forceDirection, false);
+      gridRef.current?.focusCell(next[0], next[1]);
+    },
+    [puzzle, selectedCell, maps]
+  );
+
+  // Enters a letter at the current selection and auto-advances, the same
+  // way typing a letter into the focused cell's <input> does in
+  // CrosswordGrid's handleChange — but driven by a decoded Dot Pad letter
+  // chord instead of a DOM change event.
+  const enterLetterFromDotPad = useCallback(
+    (letter) => {
+      if (!puzzle || !selectedCell) return;
+      const [row, col] = selectedCell;
+      handleCellChange(row, col, letter);
+      const dr = direction === "down" ? 1 : 0;
+      const dc = direction === "across" ? 1 : 0;
+      const next = findNextFillable(puzzle, row, col, dr, dc);
+      if (next) gridRef.current?.focusCell(next[0], next[1]);
+    },
+    [puzzle, selectedCell, direction]
+  );
+
+  // Clears a letter at the current selection, the same way pressing
+  // Backspace does in CrosswordGrid's own key handler: clears the current
+  // cell if it has a letter, otherwise steps back one cell in the current
+  // direction and clears that instead. Driven by the all-six-dots chord
+  // (see below) rather than a keyboard event.
+  const handleDotPadBackspace = useCallback(() => {
+    if (!puzzle || !selectedCell) return;
+    const [row, col] = selectedCell;
+    if (userAnswers[row][col]) {
+      handleCellChange(row, col, "");
+      return;
+    }
+    const dr = direction === "down" ? -1 : 0;
+    const dc = direction === "across" ? -1 : 0;
+    const prev = findNextFillable(puzzle, row, col, dr, dc);
+    if (!prev) return;
+    handleCellChange(prev[0], prev[1], "");
+    handleSelectCell(prev[0], prev[1], direction, false);
+    gridRef.current?.focusCell(prev[0], prev[1]);
+  }, [puzzle, selectedCell, direction, userAnswers, maps]);
+
+  // Dot Pad button navigation and letter entry, both driven by the same
+  // chords: the lone Panning Left/Right and Function 1/4 buttons mirror
+  // the Left/Right/Up/Down arrow keys, and held together, Panning
+  // Left+F1/Panning Right+F4 instead pan the braille text line (see the
+  // pagination effect above). All six dots together (no letter uses all
+  // six) acts as Backspace. Any other chord is checked against
+  // CHORD_TO_LETTER — holding the buttons for a letter's braille dots
+  // together enters that letter, Perkins-brailler style.
+  useEffect(() => {
+    return subscribeDotPadChord((chord) => {
+      switch (chord) {
+        case "1L":
+          setDotPadPageIndex((prev) => Math.max(0, prev - 1));
+          return;
+        case "4R":
+          setDotPadPageIndex((prev) => Math.min(dotPadPages.length - 1, prev + 1));
+          return;
+        case "L":
+          moveGridSelection(0, -1, "across");
+          return;
+        case "R":
+          moveGridSelection(0, 1, "across");
+          return;
+        case "1":
+          moveGridSelection(-1, 0, "down");
+          return;
+        case "4":
+          moveGridSelection(1, 0, "down");
+          return;
+        case "1234LR":
+          handleDotPadBackspace();
+          return;
+        default: {
+          const letter = CHORD_TO_LETTER[chord];
+          if (letter) enterLetterFromDotPad(letter);
+        }
+      }
+    });
+  }, [moveGridSelection, enterLetterFromDotPad, handleDotPadBackspace, dotPadPages]);
 
   function handleCellChange(row, col, value) {
     setUserAnswers((prev) => {
@@ -299,6 +504,7 @@ export default function App() {
         <main className="puzzle-layout">
           <section aria-label="Crossword grid">
             <CrosswordGrid
+              ref={gridRef}
               puzzle={puzzle}
               userAnswers={userAnswers}
               selectedCell={selectedCell}
