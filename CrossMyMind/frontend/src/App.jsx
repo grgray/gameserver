@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SubjectForm from "./components/SubjectForm";
 import CrosswordGrid from "./components/CrosswordGrid";
 import ClueList from "./components/ClueList";
+import HelpModal from "./components/HelpModal";
 import { generatePuzzle } from "./api/puzzleClient";
 import { buildWordMaps, activeWordKey, findFirstFillable, findNextFillable } from "./utils/crossword";
 import { useDotPad } from "./dotpad/useDotPad.js";
@@ -16,6 +17,19 @@ import { BrlToHex } from "./dotpad/brailleHex.js";
 // Fallback braille text line width (cells) used before a device is
 // connected/its own numberBrailleCellColumns is known.
 const DEFAULT_DOT_PAD_LINE_WIDTH = 20;
+
+// localStorage key the current game is saved under. A single fixed key
+// means saving overwrites any previous save, same as most simple save
+// slots — there's only ever one saved game at a time.
+const SAVE_STORAGE_KEY = "crossmymind-save";
+
+function hasStoredSave() {
+  try {
+    return Boolean(localStorage.getItem(SAVE_STORAGE_KEY));
+  } catch {
+    return false;
+  }
+}
 
 function emptyAnswers(size) {
   return Array.from({ length: size }, () => Array(size).fill(""));
@@ -133,10 +147,12 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [statusMessage, setStatusMessage] = useState("");
+  const [hasSavedGame, setHasSavedGame] = useState(hasStoredSave);
 
   const dotPad = useDotPad();
   const [dotPadMenuOpen, setDotPadMenuOpen] = useState(false);
   const gridRef = useRef(null);
+  const helpDialogRef = useRef(null);
 
   // Close the transport menu once a connection attempt resolves.
   useEffect(() => {
@@ -248,6 +264,53 @@ export default function App() {
     }
   }
 
+  function handleSave() {
+    if (!puzzle) return;
+    try {
+      localStorage.setItem(
+        SAVE_STORAGE_KEY,
+        JSON.stringify({ subject, puzzle, userAnswers, selectedCell, direction })
+      );
+      setHasSavedGame(true);
+      setError(null);
+      setStatusMessage("Game saved.");
+    } catch {
+      setError("Could not save the game — your browser's local storage may be full or unavailable.");
+    }
+  }
+
+  function handleLoad() {
+    let saved;
+    try {
+      const raw = localStorage.getItem(SAVE_STORAGE_KEY);
+      saved = raw ? JSON.parse(raw) : null;
+    } catch {
+      saved = null;
+    }
+    if (!saved || !saved.puzzle) {
+      setError("No saved game was found.");
+      return;
+    }
+
+    setSubject(saved.subject || "");
+    setPuzzle(saved.puzzle);
+    setUserAnswers(saved.userAnswers || emptyAnswers(saved.puzzle.size));
+    setError(null);
+
+    const freshMaps = buildWordMaps(saved.puzzle);
+    const cell = saved.selectedCell || findFirstFillable(saved.puzzle);
+    setSelectedCell(cell);
+    if (cell) {
+      const [r, c] = cell;
+      const savedDirectionStillValid =
+        saved.direction === "across" ? freshMaps.acrossWordAt[r][c] != null : freshMaps.downWordAt[r][c] != null;
+      setDirection(
+        savedDirectionStillValid ? saved.direction : freshMaps.acrossWordAt[r][c] != null ? "across" : "down"
+      );
+    }
+    setStatusMessage("Saved game loaded.");
+  }
+
   function handleSelectCell(row, col, forceDirection, toggle) {
     if (!maps) return;
     setSelectedCell([row, col]);
@@ -321,12 +384,34 @@ export default function App() {
     gridRef.current?.focusCell(prev[0], prev[1]);
   }, [puzzle, selectedCell, direction, userAnswers, maps]);
 
+  const handleReveal = useCallback(() => {
+    if (!puzzle) return;
+    setUserAnswers(
+      puzzle.grid.map((row) => row.map((cell) => (cell.filled ? cell.solution : "")))
+    );
+  }, [puzzle]);
+
+  const handleRevealClue = useCallback(() => {
+    if (!puzzle || !maps || !activeKey) return;
+    const cells = maps.wordCells[activeKey];
+    if (!cells) return;
+    setUserAnswers((prev) => {
+      const next = prev.map((r) => r.slice());
+      for (const [r, c] of cells) {
+        next[r][c] = puzzle.grid[r][c].solution;
+      }
+      return next;
+    });
+  }, [puzzle, maps, activeKey]);
+
   // Dot Pad button navigation and letter entry, both driven by the same
   // chords: the lone Panning Left/Right and Function 1/4 buttons mirror
   // the Left/Right/Up/Down arrow keys, and held together, Panning
   // Left+F1/Panning Right+F4 instead pan the braille text line (see the
-  // pagination effect above). All six dots together (no letter uses all
-  // six) acts as Backspace. Any other chord is checked against
+  // pagination effect above). F1+F4 together reveals the current clue,
+  // and Panning Left+Panning Right together reveals the whole solution
+  // (same as the two Reveal buttons). All six dots together (no letter
+  // uses all six) acts as Backspace. Any other chord is checked against
   // CHORD_TO_LETTER — holding the buttons for a letter's braille dots
   // together enters that letter, Perkins-brailler style.
   useEffect(() => {
@@ -353,13 +438,26 @@ export default function App() {
         case "1234LR":
           handleDotPadBackspace();
           return;
+        case "14":
+          handleRevealClue();
+          return;
+        case "LR":
+          handleReveal();
+          return;
         default: {
           const letter = CHORD_TO_LETTER[chord];
           if (letter) enterLetterFromDotPad(letter);
         }
       }
     });
-  }, [moveGridSelection, enterLetterFromDotPad, handleDotPadBackspace, dotPadPages]);
+  }, [
+    moveGridSelection,
+    enterLetterFromDotPad,
+    handleDotPadBackspace,
+    handleRevealClue,
+    handleReveal,
+    dotPadPages,
+  ]);
 
   function handleCellChange(row, col, value) {
     setUserAnswers((prev) => {
@@ -372,26 +470,7 @@ export default function App() {
   function handleSelectClue(entry, dir) {
     setSelectedCell([entry.row, entry.col]);
     setDirection(dir);
-  }
-
-  function handleReveal() {
-    if (!puzzle) return;
-    setUserAnswers(
-      puzzle.grid.map((row) => row.map((cell) => (cell.filled ? cell.solution : "")))
-    );
-  }
-
-  function handleRevealClue() {
-    if (!puzzle || !maps || !activeKey) return;
-    const cells = maps.wordCells[activeKey];
-    if (!cells) return;
-    setUserAnswers((prev) => {
-      const next = prev.map((r) => r.slice());
-      for (const [r, c] of cells) {
-        next[r][c] = puzzle.grid[r][c].solution;
-      }
-      return next;
-    });
+    gridRef.current?.focusCell(entry.row, entry.col);
   }
 
   // Mirror the whole grid onto the Dot Pad's graphic area, one raw braille
@@ -419,7 +498,7 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>Crossword Generator</h1>
+        <h1>Cross My Mind</h1>
         <p className="subtitle">Enter any subject and get a fresh 10x10 crossword.</p>
       </header>
 
@@ -538,6 +617,24 @@ export default function App() {
           <ClueList clues={puzzle.clues} activeKey={activeKey} onSelectClue={handleSelectClue} />
         </main>
       )}
+
+      <div className="save-toolbar">
+        <button type="button" className="button button-secondary" disabled={!puzzle} onClick={handleSave}>
+          Save Game
+        </button>
+        <button type="button" className="button button-secondary" disabled={!hasSavedGame} onClick={handleLoad}>
+          Load Game
+        </button>
+        <button
+          type="button"
+          className="button button-secondary"
+          onClick={() => helpDialogRef.current?.showModal()}
+        >
+          Help
+        </button>
+      </div>
+
+      <HelpModal ref={helpDialogRef} />
     </div>
   );
 }

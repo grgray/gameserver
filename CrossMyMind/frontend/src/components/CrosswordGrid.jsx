@@ -88,6 +88,12 @@ const CrosswordGrid = forwardRef(function CrosswordGrid(
         }
         return;
       }
+      case "Escape":
+        // Blur out of the grid so a screen reader's own navigation keys
+        // (which the grid's arrow-key handling would otherwise capture)
+        // work again, without changing which cell is selected.
+        e.target.blur();
+        return;
       default:
         return;
     }
