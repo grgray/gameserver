@@ -1,0 +1,7 @@
+# Vercel's Python runtime looks for requirements.txt at the project root
+# (this file). Mirrors backend/requirements.txt minus uvicorn, since
+# Vercel provides its own ASGI runtime rather than running our server.
+fastapi>=0.115
+httpx>=0.27
+python-dotenv>=1.0
+pydantic>=2.7
