@@ -69,26 +69,35 @@ const CHORD_TO_LETTER = Object.fromEntries(
 // The Dot Pad's graphic area is 30 cells wide per line.
 const GRAPHIC_LINE_WIDTH = 30;
 
+// Boundary-cell dot pattern: all 8 dots raised, except when a fillable cell
+// sits directly beneath it — dots 7/8 sit at the bottom of the cell, right
+// against the top of whatever's in the row below (rows are stacked with no
+// gap), so raising them there would bleed into a letter cell's top dots.
+function boundaryHex(belowIsFillable) {
+  return BrlToHex(belowIsFillable ? "123456" : "12345678");
+}
+
 // Builds one puzzle row's braille cells for the Dot Pad graphic area — a
 // spacer cell between each grid cell so adjacent cells stay distinguishable
-// by touch (same reasoning as Sudoku's buildRowHex): a blocked cell is all
-// 8 dots raised, except when the cell directly below it (in the next row
-// down, same column) is fillable — dots 7/8 sit at the bottom of the cell,
-// right against the top of whatever's in the row below (rows are stacked
-// with no gap), so raising them there would bleed into a letter cell's top
-// dots. A filled cell with a typed letter shows that letter's braille
-// pattern, and a filled-but-empty cell is blank. The selected cell always
-// gets dots 7 and 8 added on top — on top of its letter's pattern if it
-// has one, or alone if it's still empty. A spacer between two blocked
-// cells repeats the cell to its left, so a run of boundary squares reads
-// as one solid wall; a spacer next to a letter cell (on either side) stays
-// blank, keeping letters legible. Padded out to the full line width so the
-// next row starts a new physical line.
+// by touch (same reasoning as Sudoku's buildRowHex): a blocked cell uses
+// boundaryHex (see above). A filled cell with a typed letter shows that
+// letter's braille pattern, and a filled-but-empty cell is blank. The
+// selected cell always gets dots 7 and 8 added on top — on top of its
+// letter's pattern if it has one, or alone if it's still empty. A spacer
+// between two blocked cells repeats that boundary pattern, so a run of
+// boundary squares reads as one solid wall — except the spacer sits one
+// device-column off from both grid columns above it, so its own diagonal
+// neighbors below are the *next* row's cells on either side of it; if
+// either of those is fillable, its dots 7/8 would bleed diagonally into
+// that letter cell's top corner, so it drops to dots 1-6 too. A spacer
+// next to a letter cell (on either side) in its own row stays blank,
+// keeping letters legible. Padded out to the full line width so the next
+// row starts a new physical line.
 function buildRowHex(rowCells, answerRow, selectedCol, nextRowCells) {
   const cells = rowCells.map((cell, col) => {
     if (!cell.filled) {
       const belowIsFillable = Boolean(nextRowCells && nextRowCells[col].filled);
-      return BrlToHex(belowIsFillable ? "123456" : "12345678");
+      return boundaryHex(belowIsFillable);
     }
     const letter = answerRow[col];
     const dots = letter ? LETTER_DOTS[letter] || "" : "";
@@ -97,7 +106,11 @@ function buildRowHex(rowCells, answerRow, selectedCol, nextRowCells) {
   const interleaved = cells.flatMap((cell, i) => {
     if (i === cells.length - 1) return [cell];
     const bothBlocked = !rowCells[i].filled && !rowCells[i + 1].filled;
-    return [cell, bothBlocked ? cell : "00"];
+    if (!bothBlocked) return [cell, "00"];
+    const belowDiagonalFillable = Boolean(
+      nextRowCells && (nextRowCells[i].filled || nextRowCells[i + 1].filled)
+    );
+    return [cell, boundaryHex(belowDiagonalFillable)];
   });
   const rowHex = interleaved.join("");
   const usedCells = interleaved.length;
