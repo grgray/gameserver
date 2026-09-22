@@ -502,13 +502,6 @@ export default function App() {
         <p className="subtitle">Enter any subject and get a fresh 10x10 crossword.</p>
       </header>
 
-      <SubjectForm
-        subject={subject}
-        onSubjectChange={setSubject}
-        onSubmit={handleGenerate}
-        loading={loading}
-      />
-
       <div className="dotpad-panel">
         {dotPad.status === "connected" ? (
           <div className="dotpad-connected">
@@ -564,10 +557,17 @@ export default function App() {
         )}
       </div>
 
-      <div aria-live="polite" className="visually-hidden" role="status">
+      <SubjectForm
+        subject={subject}
+        onSubjectChange={setSubject}
+        onSubmit={handleGenerate}
+        loading={loading}
+      />
+
+      <div aria-live="polite" aria-atomic="true" className="visually-hidden" role="status">
         {statusMessage}
       </div>
-      <div aria-live="assertive" className="visually-hidden" role="alert">
+      <div aria-live="assertive" aria-atomic="true" className="visually-hidden" role="alert">
         {error}
       </div>
 
@@ -607,7 +607,7 @@ export default function App() {
                 Reveal Clue
               </button>
             </div>
-            <p className="active-clue" aria-live="polite">
+            <p className="active-clue" role="status" aria-live="polite" aria-atomic="true">
               {activeClue
                 ? `${activeClue.number} ${activeClue.direction}: ${activeClue.clue} (${activeClue.answer_length} letters)`
                 : ""}
