@@ -607,12 +607,11 @@ export default function App() {
                 Reveal Clue
               </button>
             </div>
-            {activeClue && (
-              <p className="active-clue" aria-live="polite">
-                {activeClue.number} {activeClue.direction}: {activeClue.clue} (
-                {activeClue.answer_length} letters)
-              </p>
-            )}
+            <p className="active-clue" aria-live="polite">
+              {activeClue
+                ? `${activeClue.number} ${activeClue.direction}: ${activeClue.clue} (${activeClue.answer_length} letters)`
+                : ""}
+            </p>
           </section>
           <ClueList clues={puzzle.clues} activeKey={activeKey} onSelectClue={handleSelectClue} />
         </main>
