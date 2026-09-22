@@ -69,6 +69,13 @@ const HelpModal = forwardRef(function HelpModal(_props, ref) {
           <strong>F4</strong> alone — move down (same as the ↓ key)
         </li>
       </ul>
+      <p>
+        The selected cell — the cursor — is marked on the Dot Pad's tactile grid with dots
+        7 and 8 added to whatever's already there (blank if the cell is empty, or on top of
+        a letter's pattern if it's filled). This marker moves as you navigate, whether
+        with the arrow keys or the Dot Pad buttons above, so you can always feel exactly
+        where you are on the grid.
+      </p>
 
       <h4>Entering letters</h4>
       <p>
