@@ -1,11 +1,19 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 from .models import Cell, ClueEntry, Clues, PuzzleResponse, WordClue
 
 GRID_ROWS = 10
 GRID_COLS = 15
 MIN_PLACED_WORDS = 5
+
+# Caps the backtracking search below (one unit per word-placement decision
+# considered, not per candidate) so a pathological candidate list can't
+# blow up runtime. This is pure local computation with no network calls,
+# and the search space here is tiny (a few dozen words at most), so this
+# limit is never expected to bind in practice — it's a safety net, not a
+# quality tradeoff.
+MAX_BACKTRACK_ATTEMPTS = 4000
 
 
 @dataclass
@@ -81,9 +89,16 @@ def _place(grid, word: str, row: int, col: int, direction: str) -> None:
             grid[row + i][col] = ch
 
 
-def _find_placement(grid, word: str) -> Optional[tuple]:
+def _find_all_placements(grid, word: str) -> List[tuple]:
+    """All distinct valid (row, col, direction) placements for word, in the
+    order they're found scanning across-then-down, letter-by-letter,
+    top-left to bottom-right — same search order _find_placement used to
+    stop at the first match; here every match is kept as a candidate for
+    the backtracking search below to try."""
     rows = len(grid)
     cols = len(grid[0])
+    seen = set()
+    results = []
     for direction in ("across", "down"):
         for i, ch in enumerate(word):
             for r in range(rows):
@@ -91,33 +106,73 @@ def _find_placement(grid, word: str) -> Optional[tuple]:
                     if grid[r][c] != ch:
                         continue
                     row, col = (r, c - i) if direction == "across" else (r - i, c)
+                    key = (row, col, direction)
+                    if key in seen:
+                        continue
                     if _can_place(grid, word, row, col, direction, is_first=False):
-                        return row, col, direction
-    return None
+                        seen.add(key)
+                        results.append(key)
+    return results
+
+
+def _word_cells(length: int, row: int, col: int, direction: str) -> List[tuple]:
+    if direction == "across":
+        return [(row, col + i) for i in range(length)]
+    return [(row + i, col) for i in range(length)]
+
+
+def _unplace(grid, still_placed: List[PlacedWord], word: str, row: int, col: int, direction: str) -> None:
+    """Reverses _place, but only actually clears a cell if no other
+    currently-placed word (an intersection) still depends on it."""
+    other_cells = set()
+    for pw in still_placed:
+        other_cells.update(_word_cells(len(pw.word), pw.row, pw.col, pw.direction))
+    for r, c in _word_cells(len(word), row, col, direction):
+        if (r, c) not in other_cells:
+            grid[r][c] = None
 
 
 def _place_words(word_clues: List[WordClue], rows: int, cols: int) -> List[PlacedWord]:
     words = sorted(word_clues, key=lambda wc: len(wc.word), reverse=True)
     grid = [[None] * cols for _ in range(rows)]
-    placed: List[PlacedWord] = []
 
     first = words[0]
     row0 = rows // 2
     col0 = max(0, (cols - len(first.word)) // 2)
     if not _can_place(grid, first.word, row0, col0, "across", is_first=True):
-        return placed, grid
+        return [], grid
     _place(grid, first.word, row0, col0, "across")
-    placed.append(PlacedWord(first.word, first.clue, row0, col0, "across"))
+    placed: List[PlacedWord] = [PlacedWord(first.word, first.clue, row0, col0, "across")]
 
-    for wc in words[1:]:
-        placement = _find_placement(grid, wc.word)
-        if placement is None:
-            continue
-        row, col, direction = placement
-        _place(grid, wc.word, row, col, direction)
-        placed.append(PlacedWord(wc.word, wc.clue, row, col, direction))
+    best_placed = list(placed)
+    best_grid = [row[:] for row in grid]
+    attempts = 0
 
-    return placed, grid
+    def backtrack(index: int) -> None:
+        nonlocal attempts, best_placed, best_grid
+        if attempts >= MAX_BACKTRACK_ATTEMPTS or index >= len(words):
+            return
+        attempts += 1
+        wc = words[index]
+
+        for row, col, direction in _find_all_placements(grid, wc.word):
+            _place(grid, wc.word, row, col, direction)
+            placed.append(PlacedWord(wc.word, wc.clue, row, col, direction))
+            if len(placed) > len(best_placed):
+                best_placed = list(placed)
+                best_grid = [r[:] for r in grid]
+            backtrack(index + 1)
+            placed.pop()
+            _unplace(grid, placed, wc.word, row, col, direction)
+            if attempts >= MAX_BACKTRACK_ATTEMPTS:
+                return
+
+        # Also try skipping this word entirely — a later word may fit
+        # better in the space it would have used.
+        backtrack(index + 1)
+
+    backtrack(1)
+    return best_placed, best_grid
 
 
 def generate_grid(
