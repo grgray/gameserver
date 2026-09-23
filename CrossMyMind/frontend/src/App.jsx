@@ -417,15 +417,23 @@ export default function App() {
     });
   }, [puzzle, maps, activeKey]);
 
+  // Jumps the selection to the first cell of the currently active clue —
+  // same as clicking that clue in the Across/Down list.
+  const jumpToClueStart = useCallback(() => {
+    if (!activeClue) return;
+    handleSelectClue(activeClue, activeClue.direction);
+  }, [activeClue]);
+
   // Dot Pad button navigation and letter entry, both driven by the same
   // chords: the lone Panning Left/Right and Function 1/4 buttons mirror
   // the Left/Right/Up/Down arrow keys, and held together, Panning
   // Left+F1/Panning Right+F4 instead pan the braille text line (see the
   // pagination effect above). F1+F4 together reveals the current clue,
-  // and Panning Left+Panning Right together reveals the whole solution
-  // (same as the two Reveal buttons). All six dots together (no letter
-  // uses all six) acts as Backspace. Any other chord is checked against
-  // CHORD_TO_LETTER — holding the buttons for a letter's braille dots
+  // Panning Left+Panning Right together reveals the whole solution (same
+  // as the two Reveal buttons), and F1+Panning Left+F4 (dots 2-3-5) jumps
+  // to the first cell of the current clue. All six dots together (no
+  // letter uses all six) acts as Backspace. Any other chord is checked
+  // against CHORD_TO_LETTER — holding the buttons for a letter's braille dots
   // together enters that letter, Perkins-brailler style.
   useEffect(() => {
     return subscribeDotPadChord((chord) => {
@@ -457,6 +465,9 @@ export default function App() {
         case "LR":
           handleReveal();
           return;
+        case "14L":
+          jumpToClueStart();
+          return;
         default: {
           const letter = CHORD_TO_LETTER[chord];
           if (letter) enterLetterFromDotPad(letter);
@@ -469,6 +480,7 @@ export default function App() {
     handleDotPadBackspace,
     handleRevealClue,
     handleReveal,
+    jumpToClueStart,
     dotPadPages,
   ]);
 
