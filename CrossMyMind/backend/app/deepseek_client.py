@@ -77,7 +77,7 @@ async def generate_words(subject: str) -> List[WordClue]:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=55.0) as client:
             resp = await client.post(DEEPSEEK_API_URL, json=payload, headers=headers)
     except httpx.RequestError as exc:
         raise DeepSeekError(f"Could not reach DeepSeek API: {exc}") from exc
