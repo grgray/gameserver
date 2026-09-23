@@ -106,6 +106,10 @@ const HelpModal = forwardRef(function HelpModal(_props, ref) {
         <li>
           <strong>Panning Right + F4</strong> together — pan the clue text line right
         </li>
+        <li>
+          <strong>F1 + Panning Left + F4</strong> together (dots 2-3-5) — jump to the
+          first cell of the current clue
+        </li>
       </ul>
 
       <h3>Reading the clue on the Dot Pad</h3>
