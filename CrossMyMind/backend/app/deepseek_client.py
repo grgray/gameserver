@@ -9,8 +9,8 @@ from .models import WordClue
 
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
 DEFAULT_MODEL = "deepseek-v4-flash"
-MAX_WORD_LENGTH = 10
-CANDIDATE_COUNT = 18
+MAX_WORD_LENGTH = 15
+CANDIDATE_COUNT = 28
 
 
 class DeepSeekError(Exception):

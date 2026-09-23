@@ -2,9 +2,9 @@
 // and clue panel can agree on which cells belong to which across/down word
 // without re-deriving that from the raw fill pattern.
 export function buildWordMaps(puzzle) {
-  const { size, clues } = puzzle;
-  const acrossWordAt = Array.from({ length: size }, () => Array(size).fill(null));
-  const downWordAt = Array.from({ length: size }, () => Array(size).fill(null));
+  const { rows, cols, clues } = puzzle;
+  const acrossWordAt = Array.from({ length: rows }, () => Array(cols).fill(null));
+  const downWordAt = Array.from({ length: rows }, () => Array(cols).fill(null));
   const wordCells = {};
 
   for (const entry of clues.across) {
@@ -44,10 +44,10 @@ export function activeWordKey(row, col, direction, maps) {
 }
 
 export function findNextFillable(puzzle, row, col, dr, dc) {
-  const { size, grid } = puzzle;
+  const { rows, cols, grid } = puzzle;
   let r = row + dr;
   let c = col + dc;
-  while (r >= 0 && r < size && c >= 0 && c < size) {
+  while (r >= 0 && r < rows && c >= 0 && c < cols) {
     if (grid[r][c].filled) return [r, c];
     r += dr;
     c += dc;
@@ -56,9 +56,9 @@ export function findNextFillable(puzzle, row, col, dr, dc) {
 }
 
 export function findFirstFillable(puzzle) {
-  const { size, grid } = puzzle;
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
+  const { rows, cols, grid } = puzzle;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
       if (grid[r][c].filled) return [r, c];
     }
   }

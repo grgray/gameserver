@@ -1,6 +1,6 @@
 # CrossMyMind
 
-A full-stack crossword puzzle generator. Give it a subject and it builds a 10x10
+A full-stack crossword puzzle generator. Give it a subject and it builds a 15x10
 crossword grid with clues, using DeepSeek to generate the word/clue list and a
 local grid-placement algorithm (no LLM involved) to lay them out.
 
@@ -75,7 +75,7 @@ Since this lives inside the larger `gameserver` monorepo:
 1. Frontend posts `{ subject }` to `POST /api/puzzle`.
 2. Backend asks DeepSeek for ~18 candidate `{ word, clue }` pairs related to the subject.
 3. Backend's grid-placement algorithm (`backend/app/grid_generator.py`) places
-   as many of those words as it can on a 10x10 grid, longest-first, finding
+   as many of those words as it can on a 15x10 grid, longest-first, finding
    valid intersections and rejecting words that don't fit or that would create
    invalid adjacent letters. Words that don't fit are dropped.
 4. Backend returns the grid (fill pattern + solution letters + cell numbers)

@@ -31,8 +31,8 @@ function hasStoredSave() {
   }
 }
 
-function emptyAnswers(size) {
-  return Array.from({ length: size }, () => Array(size).fill(""));
+function emptyAnswers(rows, cols) {
+  return Array.from({ length: rows }, () => Array(cols).fill(""));
 }
 
 // Standard six-dot braille alphabet (Grade 1), dot numbers 1-6.
@@ -259,7 +259,7 @@ export default function App() {
     try {
       const data = await generatePuzzle(subjectValue);
       setPuzzle(data);
-      setUserAnswers(emptyAnswers(data.size));
+      setUserAnswers(emptyAnswers(data.rows, data.cols));
       const first = findFirstFillable(data);
       setSelectedCell(first);
       if (first) {
@@ -307,7 +307,7 @@ export default function App() {
 
     setSubject(saved.subject || "");
     setPuzzle(saved.puzzle);
-    setUserAnswers(saved.userAnswers || emptyAnswers(saved.puzzle.size));
+    setUserAnswers(saved.userAnswers || emptyAnswers(saved.puzzle.rows, saved.puzzle.cols));
     setError(null);
 
     const freshMaps = buildWordMaps(saved.puzzle);
@@ -512,7 +512,7 @@ export default function App() {
     <div className="app">
       <header>
         <h1>Cross My Mind</h1>
-        <p className="subtitle">Enter any subject and get a fresh 10x10 crossword.</p>
+        <p className="subtitle">Enter any subject and get a fresh 15x10 crossword.</p>
       </header>
 
       <div className="dotpad-panel">

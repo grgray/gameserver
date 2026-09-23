@@ -3,7 +3,8 @@ from typing import List, Optional
 
 from .models import Cell, ClueEntry, Clues, PuzzleResponse, WordClue
 
-GRID_SIZE = 10
+GRID_ROWS = 10
+GRID_COLS = 15
 MIN_PLACED_WORDS = 5
 
 
@@ -22,14 +23,15 @@ class GridGenerationError(Exception):
 
 def _can_place(grid, word: str, row: int, col: int, direction: str, is_first: bool) -> bool:
     length = len(word)
-    size = len(grid)
+    rows = len(grid)
+    cols = len(grid[0])
 
     if direction == "across":
-        if row < 0 or row >= size or col < 0 or col + length > size:
+        if row < 0 or row >= rows or col < 0 or col + length > cols:
             return False
         if col - 1 >= 0 and grid[row][col - 1] is not None:
             return False
-        if col + length < size and grid[row][col + length] is not None:
+        if col + length < cols and grid[row][col + length] is not None:
             return False
         has_intersection = False
         for i, ch in enumerate(word):
@@ -42,16 +44,16 @@ def _can_place(grid, word: str, row: int, col: int, direction: str, is_first: bo
             else:
                 if r - 1 >= 0 and grid[r - 1][c] is not None:
                     return False
-                if r + 1 < size and grid[r + 1][c] is not None:
+                if r + 1 < rows and grid[r + 1][c] is not None:
                     return False
         return is_first or has_intersection
 
     if direction == "down":
-        if col < 0 or col >= size or row < 0 or row + length > size:
+        if col < 0 or col >= cols or row < 0 or row + length > rows:
             return False
         if row - 1 >= 0 and grid[row - 1][col] is not None:
             return False
-        if row + length < size and grid[row + length][col] is not None:
+        if row + length < rows and grid[row + length][col] is not None:
             return False
         has_intersection = False
         for i, ch in enumerate(word):
@@ -64,7 +66,7 @@ def _can_place(grid, word: str, row: int, col: int, direction: str, is_first: bo
             else:
                 if c - 1 >= 0 and grid[r][c - 1] is not None:
                     return False
-                if c + 1 < size and grid[r][c + 1] is not None:
+                if c + 1 < cols and grid[r][c + 1] is not None:
                     return False
         return is_first or has_intersection
 
@@ -80,11 +82,12 @@ def _place(grid, word: str, row: int, col: int, direction: str) -> None:
 
 
 def _find_placement(grid, word: str) -> Optional[tuple]:
-    size = len(grid)
+    rows = len(grid)
+    cols = len(grid[0])
     for direction in ("across", "down"):
         for i, ch in enumerate(word):
-            for r in range(size):
-                for c in range(size):
+            for r in range(rows):
+                for c in range(cols):
                     if grid[r][c] != ch:
                         continue
                     row, col = (r, c - i) if direction == "across" else (r - i, c)
@@ -93,14 +96,14 @@ def _find_placement(grid, word: str) -> Optional[tuple]:
     return None
 
 
-def _place_words(word_clues: List[WordClue], size: int) -> List[PlacedWord]:
+def _place_words(word_clues: List[WordClue], rows: int, cols: int) -> List[PlacedWord]:
     words = sorted(word_clues, key=lambda wc: len(wc.word), reverse=True)
-    grid = [[None] * size for _ in range(size)]
+    grid = [[None] * cols for _ in range(rows)]
     placed: List[PlacedWord] = []
 
     first = words[0]
-    row0 = size // 2
-    col0 = max(0, (size - len(first.word)) // 2)
+    row0 = rows // 2
+    col0 = max(0, (cols - len(first.word)) // 2)
     if not _can_place(grid, first.word, row0, col0, "across", is_first=True):
         return placed, grid
     _place(grid, first.word, row0, col0, "across")
@@ -117,29 +120,35 @@ def _place_words(word_clues: List[WordClue], size: int) -> List[PlacedWord]:
     return placed, grid
 
 
-def generate_grid(word_clues: List[WordClue], subject: str, size: int = GRID_SIZE) -> PuzzleResponse:
-    candidates = [wc for wc in word_clues if 2 <= len(wc.word) <= size]
+def generate_grid(
+    word_clues: List[WordClue],
+    subject: str,
+    rows: int = GRID_ROWS,
+    cols: int = GRID_COLS,
+) -> PuzzleResponse:
+    max_len = max(rows, cols)
+    candidates = [wc for wc in word_clues if 2 <= len(wc.word) <= max_len]
     if not candidates:
         raise GridGenerationError("No candidate words were short enough to fit the grid.")
 
-    placed, grid = _place_words(candidates, size)
+    placed, grid = _place_words(candidates, rows, cols)
     if len(placed) < MIN_PLACED_WORDS:
         raise GridGenerationError(
             f"Only {len(placed)} words could be placed on the grid "
             f"(need at least {MIN_PLACED_WORDS}); try a different subject."
         )
 
-    number_grid = [[None] * size for _ in range(size)]
+    number_grid = [[None] * cols for _ in range(rows)]
     next_number = 1
-    for r in range(size):
-        for c in range(size):
+    for r in range(rows):
+        for c in range(cols):
             if grid[r][c] is None:
                 continue
             starts_across = (c == 0 or grid[r][c - 1] is None) and (
-                c + 1 < size and grid[r][c + 1] is not None
+                c + 1 < cols and grid[r][c + 1] is not None
             )
             starts_down = (r == 0 or grid[r - 1][c] is None) and (
-                r + 1 < size and grid[r + 1][c] is not None
+                r + 1 < rows and grid[r + 1][c] is not None
             )
             if starts_across or starts_down:
                 number_grid[r][c] = next_number
@@ -152,9 +161,9 @@ def generate_grid(word_clues: List[WordClue], subject: str, size: int = GRID_SIZ
                 solution=grid[r][c],
                 number=number_grid[r][c],
             )
-            for c in range(size)
+            for c in range(cols)
         ]
-        for r in range(size)
+        for r in range(rows)
     ]
 
     across: List[ClueEntry] = []
@@ -175,7 +184,8 @@ def generate_grid(word_clues: List[WordClue], subject: str, size: int = GRID_SIZ
 
     return PuzzleResponse(
         subject=subject,
-        size=size,
+        rows=rows,
+        cols=cols,
         grid=cell_grid,
         clues=Clues(across=across, down=down),
     )
