@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import DotPadPanel from "./components/DotPadPanel.jsx";
 import GameView from "./components/GameView.jsx";
 import HowToPlay from "./components/HowToPlay.jsx";
 import Lobby from "./components/Lobby.jsx";
 import { ApiError, createGame, getGame, joinGame, makeMove, watchGame } from "./api.js";
+import { boardGraphicHex } from "./dotpad/boardGraphic.js";
+import { displayDotPadGraphic } from "./dotpad/dotpadClient.js";
 import { useDotPad } from "./dotpad/useDotPad.js";
+import { placeMarble } from "./game.js";
 import { initialState, reducer } from "./gameState.js";
 import { clearSeat, loadSeat, saveSeat } from "./seatStorage.js";
 
@@ -60,6 +63,26 @@ export default function App() {
     if (!gameId) return undefined;
     return watchGame(gameId, (game) => dispatch({ type: "received", game, animate: motionAllowed() }));
   }, [gameId]);
+
+  // Mirror the board on the Dot Pad's graphic area as it appears on screen,
+  // in two steps per move: first with the piece placed (the player's chosen
+  // cell, or a move's placement while its rotation animates), then with the
+  // rotation done. Also sent as soon as a device connects; outside a game
+  // the display is cleared. Unchanged boards aren't sent again.
+  const shownBoard = useMemo(() => {
+    const { game, spin, pending } = state;
+    if (!game) return null;
+    if (spin) return spin.board;
+    if (pending) return placeMarble(game.board, pending.row, pending.col, game.currentPlayer);
+    return game.board;
+  }, [state]);
+  const graphicHex = useMemo(
+    () => boardGraphicHex(shownBoard, dotPad.device?.numberCellColumns, dotPad.device?.numberCellRows),
+    [shownBoard, dotPad.device?.numberCellColumns, dotPad.device?.numberCellRows]
+  );
+  useEffect(() => {
+    if (dotPad.status === "connected") displayDotPadGraphic(graphicHex);
+  }, [graphicHex, dotPad.status]);
 
   const spinMoveCount = state.spin?.next.moveCount;
   const finishSpin = useCallback(() => {

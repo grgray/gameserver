@@ -2,10 +2,25 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import App from "./App.jsx";
+import { boardGraphicHex } from "./dotpad/boardGraphic.js";
 
-// The Dot Pad SDK talks to Bluetooth/USB hardware; stand in a disconnected device.
+// The Dot Pad SDK talks to Bluetooth/USB hardware; stand in a device whose
+// connection status each test can set.
+const dotPadMock = vi.hoisted(() => ({ status: "idle", displayGraphic: vi.fn() }));
+
 vi.mock("./dotpad/useDotPad.js", () => ({
-  useDotPad: () => ({ device: null, status: "idle", error: "", connect: vi.fn(), disconnect: vi.fn(), supported: true }),
+  useDotPad: () => ({
+    device: null,
+    status: dotPadMock.status,
+    error: "",
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    supported: true,
+  }),
+}));
+
+vi.mock("./dotpad/dotpadClient.js", () => ({
+  displayDotPadGraphic: dotPadMock.displayGraphic,
 }));
 
 class FakeWebSocket {
@@ -46,6 +61,8 @@ let fetchMock;
 
 beforeEach(() => {
   sessionStorage.clear();
+  dotPadMock.status = "idle";
+  dotPadMock.displayGraphic.mockClear();
   FakeWebSocket.instances = [];
   vi.stubGlobal("WebSocket", FakeWebSocket);
   fetchMock = vi.fn();
@@ -71,6 +88,82 @@ describe("App", () => {
     render(<App />);
     const button = screen.getByRole("button", { name: "Connect to Dot Pad" });
     expect(button.closest("header")).not.toBeNull();
+  });
+
+  it("draws the board on a connected Dot Pad and redraws it after each move", async () => {
+    dotPadMock.status = "connected";
+    const user = userEvent.setup();
+    render(<App />);
+
+    // Lobby: the display is cleared.
+    expect(dotPadMock.displayGraphic).toHaveBeenLastCalledWith("00".repeat(300));
+
+    await startLocalGame(user);
+    expect(dotPadMock.displayGraphic).toHaveBeenLastCalledWith(boardGraphicHex(emptyBoard()));
+
+    const after = emptyBoard();
+    after[0][0] = "white";
+    FakeWebSocket.instances[0].push(
+      gameState({
+        board: after,
+        currentPlayer: "black",
+        moveCount: 1,
+        lastMove: { player: "white", row: 0, col: 0, rotation: null },
+      })
+    );
+
+    await screen.findByRole("button", { name: /^A1, white/ });
+    expect(dotPadMock.displayGraphic).toHaveBeenLastCalledWith(boardGraphicHex(after));
+  });
+
+  it("shows a chosen piece on the Dot Pad before the rotation, then the rotated board", async () => {
+    dotPadMock.status = "connected";
+    const user = userEvent.setup();
+    render(<App />);
+    await startLocalGame(user);
+    const sent = () => dotPadMock.displayGraphic.mock.calls.map(([hex]) => hex);
+
+    const placed = emptyBoard();
+    placed[2][2] = "black";
+    await user.click(screen.getByRole("button", { name: /^C3, empty/ }));
+    expect(sent().at(-1)).toBe(boardGraphicHex(placed));
+
+    // Cancelling takes the piece back off.
+    await user.keyboard("{Escape}");
+    expect(sent().at(-1)).toBe(boardGraphicHex(emptyBoard()));
+
+    await user.click(screen.getByRole("button", { name: /^C3, empty/ }));
+    const rotated = emptyBoard();
+    rotated[2][0] = "black";
+    fetchMock.mockReturnValueOnce(
+      jsonResponse(200, gameState({
+        board: rotated,
+        currentPlayer: "white",
+        moveCount: 1,
+        lastMove: { player: "black", row: 2, col: 2, rotation: { quadrant: "top-left", direction: "clockwise" } },
+      }))
+    );
+    await user.click(screen.getByRole("button", { name: "Turn top-left quadrant clockwise" }));
+    await screen.findByRole("button", { name: "A3, black, last move" });
+
+    const empty = boardGraphicHex(emptyBoard());
+    // Lobby, game start, placed, cancelled, placed again, rotated: each sent once.
+    expect(sent()).toEqual([
+      "00".repeat(300),
+      empty,
+      boardGraphicHex(placed),
+      empty,
+      boardGraphicHex(placed),
+      boardGraphicHex(rotated),
+    ]);
+  });
+
+  it("leaves the Dot Pad alone when none is connected", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await startLocalGame(user);
+
+    expect(dotPadMock.displayGraphic).not.toHaveBeenCalled();
   });
 
   it("has no detectable accessibility problems in the lobby", async () => {
