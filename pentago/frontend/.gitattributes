@@ -1,0 +1,4 @@
+# Vendored Dot Pad SDK and liblouis assets must stay byte-identical to upstream.
+public/liblouis/** -text
+src/dotpad/DotPadSDK-3.0.3.js -text
+src/dotpad/DotPadSDK-3.0.3.d.ts -text
