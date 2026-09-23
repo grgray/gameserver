@@ -122,7 +122,7 @@ const CrosswordGrid = forwardRef(function CrosswordGrid(
     <table
       className="crossword-grid"
       role="grid"
-      aria-label={`${puzzle.size} by ${puzzle.size} crossword grid`}
+      aria-label={`${puzzle.rows} rows by ${puzzle.cols} columns crossword grid`}
     >
       <tbody>
         {puzzle.grid.map((rowCells, r) => (

@@ -32,6 +32,7 @@ class Clues(BaseModel):
 
 class PuzzleResponse(BaseModel):
     subject: str
-    size: int
+    rows: int
+    cols: int
     grid: List[List[Cell]]
     clues: Clues
